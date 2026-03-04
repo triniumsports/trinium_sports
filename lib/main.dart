@@ -1,48 +1,23 @@
 import 'package:flutter/material.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 
-import 'core/supabase_config.dart';
-import 'screens/auth_gate.dart';
-
-Future<void> main() async {
+void main() {
   WidgetsFlutterBinding.ensureInitialized();
-
-  String? startupError;
-
-  try {
-    await Supabase.initialize(
-      url: SupabaseConfig.url,
-      anonKey: SupabaseConfig.publishableKey,
-    );
-  } catch (e) {
-    startupError = e.toString();
-  }
-
-  runApp(TriniumApp(startupError: startupError));
+  runApp(const TriniumApp());
 }
 
 class TriniumApp extends StatelessWidget {
-  final String? startupError;
-
-  const TriniumApp({super.key, this.startupError});
+  const TriniumApp({super.key});
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Trinium Sports',
       debugShowCheckedModeBanner: false,
-      theme: ThemeData(useMaterial3: true),
-      home: startupError != null
-          ? Scaffold(
-              appBar: AppBar(title: const Text('Trinium Sports')),
-              body: Padding(
-                padding: const EdgeInsets.all(24),
-                child: SelectableText(
-                  'Erro ao iniciar o app:\n\n$startupError',
-                ),
-              ),
-            )
-          : const AuthGate(),
+      home: Scaffold(
+        appBar: AppBar(title: const Text('Trinium Sports')),
+        body: const Center(
+          child: Text('APP MINIMO OK'),
+        ),
+      ),
     );
   }
 }
