@@ -28,7 +28,7 @@ class _AuthGateState extends State<AuthGate> {
 
     try {
       if (_mode == 'register') {
-        await _authService.signUp(
+        final response = await _authService.signUp(
           email: _emailController.text.trim(),
           password: _passwordController.text.trim(),
           fullName: _nameController.text.trim(),
@@ -36,7 +36,9 @@ class _AuthGateState extends State<AuthGate> {
         );
 
         setState(() {
-          _message = 'Cadastro realizado com sucesso.';
+          _message = response.session == null
+              ? 'Conta criada. Confirme seu e-mail e depois faça login.'
+              : 'Cadastro realizado com sucesso.';
         });
       } else {
         await _authService.signIn(

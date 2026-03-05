@@ -14,12 +14,51 @@ class AuthService {
     final response = await _client.auth.signUp(
       email: email,
       password: password,
+      data: {
+        'full_name': fullName,
+        'user_role': userRole,
+      },
     );
 
-    final user = response.user;
+    if (response.session != null) {
+      await ensureProfileFromMetadata();
+    }
+
+    return response;
+  }
+
+  Future<AuthResponse> signIn({
+    required String email,
+    required String password,
+  }) async {
+    final response = await _client.auth.signInWithPassword(
+      email: email,
+      password: password,
+    );
+
+    await ensureProfileFromMetadata();
+
+    return response;
+  }
+
+  Future<void> signOut() async {
+    await _client.auth.signOut();
+  }
+
+  Future<void> ensureProfileFromMetadata() async {
+    final user = currentUser;
 
     if (user == null) {
-      throw Exception('Não foi possível criar o usuário.');
+      throw Exception('Usuário não autenticado.');
+    }
+
+    final metadata = user.userMetadata ?? {};
+    final fullName = (metadata['full_name'] ?? '').toString();
+    final userRole = (metadata['user_role'] ?? '').toString();
+    final email = user.email ?? '';
+
+    if (userRole.isEmpty) {
+      throw Exception('user_role não encontrado no metadata do usuário.');
     }
 
     await _client.from('profiles').upsert({
@@ -44,22 +83,6 @@ class AuthService {
         'cref_number': 'PENDENTE',
       });
     }
-
-    return response;
-  }
-
-  Future<AuthResponse> signIn({
-    required String email,
-    required String password,
-  }) async {
-    return await _client.auth.signInWithPassword(
-      email: email,
-      password: password,
-    );
-  }
-
-  Future<void> signOut() async {
-    await _client.auth.signOut();
   }
 
   Future<Map<String, dynamic>?> getMyProfile() async {
