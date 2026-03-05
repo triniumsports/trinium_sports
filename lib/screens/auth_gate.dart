@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../services/auth_service.dart';
+import 'home_router_screen.dart';
 
 class AuthGate extends StatefulWidget {
   const AuthGate({super.key});
@@ -14,6 +15,7 @@ class _AuthGateState extends State<AuthGate> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   final _nameController = TextEditingController();
+  final _crefController = TextEditingController();
 
   String _mode = 'login';
   String _role = 'athlete';
@@ -28,11 +30,20 @@ class _AuthGateState extends State<AuthGate> {
 
     try {
       if (_mode == 'register') {
+        if (_role == 'coach' && _crefController.text.trim().isEmpty) {
+          setState(() {
+            _message = 'CREF/CRN é obrigatório para cadastro de treinador.';
+            _loading = false;
+          });
+          return;
+        }
+
         final response = await _authService.signUp(
           email: _emailController.text.trim(),
           password: _passwordController.text.trim(),
           fullName: _nameController.text.trim(),
           userRole: _role,
+          crefNumber: _role == 'coach' ? _crefController.text.trim() : null,
         );
 
         setState(() {
@@ -52,6 +63,14 @@ class _AuthGateState extends State<AuthGate> {
           _message =
               'Login realizado com sucesso. Perfil: ${profile?['user_role'] ?? 'sem perfil'}';
         });
+
+        if (!mounted) return;
+
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(
+            builder: (_) => const HomeRouterScreen(),
+          ),
+        );
       }
     } catch (e) {
       setState(() {
@@ -69,6 +88,7 @@ class _AuthGateState extends State<AuthGate> {
     _emailController.dispose();
     _passwordController.dispose();
     _nameController.dispose();
+    _crefController.dispose();
     super.dispose();
   }
 
@@ -100,6 +120,19 @@ class _AuthGateState extends State<AuthGate> {
                       labelText: 'Nome completo',
                       border: OutlineInputBorder(),
                     ),
+                  ),
+                if (isRegister && _role == 'coach')
+                  Column(
+                    children: [
+                      TextField(
+                        controller: _crefController,
+                        decoration: const InputDecoration(
+                          labelText: 'CREF/CRN (obrigatório)',
+                          border: OutlineInputBorder(),
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                    ],
                   ),
                 if (isRegister) const SizedBox(height: 16),
                 TextField(

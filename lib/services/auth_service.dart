@@ -10,18 +10,25 @@ class AuthService {
     required String password,
     required String fullName,
     required String userRole,
+    String? crefNumber,
   }) async {
+    // Salva metadata (útil para pós-login)
     final response = await _client.auth.signUp(
       email: email,
       password: password,
       data: {
         'full_name': fullName,
         'user_role': userRole,
+        // guarda também o CREF/CRN, para reconstruir no login se precisar
+        if (crefNumber != null) ...{'cref_number': crefNumber},
       },
     );
 
+    // Se já houver sessão (confirm email OFF), cria perfil agora.
     if (response.session != null) {
-      await ensureProfileFromMetadata();
+      await ensureProfileFromMetadata(
+        overrideCrefNumber: crefNumber,
+      );
     }
 
     return response;
@@ -37,7 +44,6 @@ class AuthService {
     );
 
     await ensureProfileFromMetadata();
-
     return response;
   }
 
@@ -45,12 +51,11 @@ class AuthService {
     await _client.auth.signOut();
   }
 
-  Future<void> ensureProfileFromMetadata() async {
+  Future<void> ensureProfileFromMetadata({
+    String? overrideCrefNumber,
+  }) async {
     final user = currentUser;
-
-    if (user == null) {
-      throw Exception('Usuário não autenticado.');
-    }
+    if (user == null) throw Exception('Usuário não autenticado.');
 
     final metadata = user.userMetadata ?? {};
     final fullName = (metadata['full_name'] ?? '').toString();
@@ -61,6 +66,7 @@ class AuthService {
       throw Exception('user_role não encontrado no metadata do usuário.');
     }
 
+    // profiles (tem full_name)
     await _client.from('profiles').upsert({
       'id': user.id,
       'email': email,
@@ -75,12 +81,19 @@ class AuthService {
     }
 
     if (userRole == 'coach') {
+      // coaches exige cref_number
+      final crefNumber = overrideCrefNumber ??
+          (metadata['cref_number'] ?? '').toString();
+
+      if (crefNumber.trim().isEmpty) {
+        throw Exception('CREF/CRN obrigatório para treinador.');
+      }
+
       await _client.from('coaches').upsert({
         'id': user.id,
-        'full_name': fullName,
         'professional_type': 'coach',
         'verification_status': 'pending',
-        'cref_number': 'PENDENTE',
+        'cref_number': crefNumber.trim(),
       });
     }
   }
@@ -89,12 +102,10 @@ class AuthService {
     final user = currentUser;
     if (user == null) return null;
 
-    final response = await _client
+    return await _client
         .from('profiles')
         .select()
         .eq('id', user.id)
         .maybeSingle();
-
-    return response;
   }
 }
