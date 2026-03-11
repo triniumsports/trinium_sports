@@ -6,7 +6,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 class VerificationService {
   final SupabaseClient _client = Supabase.instance.client;
 
-  static const String bucket = 'verification-docs';
+  static const String bucket = 'professional-verification';
 
   Future<void> pickAndUploadCrefOrCrn() async {
     final user = _client.auth.currentUser;
