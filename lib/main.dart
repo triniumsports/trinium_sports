@@ -38,7 +38,7 @@ class TriniumApp extends StatelessWidget {
                 child: SelectableText('ERRO SUPABASE:\n\n$startupError'),
               ),
             )
-          : const AuthCallbackScreen(child: const AuthGate()),
+          : const AuthCallbackScreen(child: AuthGate()),
     );
   }
 }

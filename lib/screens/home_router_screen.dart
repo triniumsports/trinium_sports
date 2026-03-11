@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../services/auth_service.dart';
+import '../services/verification_service.dart';
 import 'auth_gate.dart';
 
 class HomeRouterScreen extends StatefulWidget {
@@ -45,7 +46,7 @@ class _HomeRouterScreenState extends State<HomeRouterScreen> {
 
         final status = (coach?['verification_status'] ?? 'pending').toString();
 
-        // No seu schema, aprovado = verified
+        // No seu schema: aprovado = verified
         if (status == 'verified') {
           _resolved = CoachHomeScreen(fullName: fullName);
         } else if (status == 'rejected') {
@@ -88,8 +89,14 @@ class _HomeRouterScreenState extends State<HomeRouterScreen> {
 class BaseHomeScaffold extends StatelessWidget {
   final String title;
   final String message;
+  final Widget? extra;
 
-  const BaseHomeScaffold({super.key, required this.title, required this.message});
+  const BaseHomeScaffold({
+    super.key,
+    required this.title,
+    required this.message,
+    this.extra,
+  });
 
   Future<void> _logout(BuildContext context) async {
     await AuthService().signOut();
@@ -116,7 +123,16 @@ class BaseHomeScaffold extends StatelessWidget {
       body: Center(
         child: Padding(
           padding: const EdgeInsets.all(24),
-          child: Text(message, textAlign: TextAlign.center),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Text(message, textAlign: TextAlign.center),
+              if (extra != null) ...[
+                const SizedBox(height: 16),
+                extra!,
+              ],
+            ],
+          ),
         ),
       ),
     );
@@ -145,23 +161,71 @@ class CoachHomeScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return BaseHomeScaffold(
-      title: 'Home do Coach',
-      message: 'Bem-vindo, $fullName\n\nSeu perfil está VERIFICADO (verified).',
+      title: 'Home do Profissional',
+      message: 'Bem-vindo, $fullName\n\nStatus: VERIFIED ✅',
     );
   }
 }
 
-class CoachPendingScreen extends StatelessWidget {
+class CoachPendingScreen extends StatefulWidget {
   final String fullName;
   final String status;
 
-  const CoachPendingScreen({super.key, required this.fullName, required this.status});
+  const CoachPendingScreen({
+    super.key,
+    required this.fullName,
+    required this.status,
+  });
+
+  @override
+  State<CoachPendingScreen> createState() => _CoachPendingScreenState();
+}
+
+class _CoachPendingScreenState extends State<CoachPendingScreen> {
+  bool _uploading = false;
+  String? _uploadMsg;
+
+  Future<void> _uploadDoc() async {
+    setState(() {
+      _uploading = true;
+      _uploadMsg = null;
+    });
+
+    try {
+      await VerificationService().pickAndUploadCrefOrCrn();
+      setState(() {
+        _uploadMsg = 'Documento enviado com sucesso ✅\nAguarde validação.';
+      });
+    } catch (e) {
+      setState(() {
+        _uploadMsg = 'Erro ao enviar documento: $e';
+      });
+    } finally {
+      setState(() {
+        _uploading = false;
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     return BaseHomeScaffold(
       title: 'Aguardando Aprovação',
-      message: 'Olá, $fullName\n\nStatus do cadastro: $status\n\nAguarde validação.',
+      message:
+          'Olá, ${widget.fullName}\n\nStatus do cadastro: ${widget.status}\n\n'
+          'Envie uma foto do seu CREF/CRN para validação.',
+      extra: Column(
+        children: [
+          FilledButton(
+            onPressed: _uploading ? null : _uploadDoc,
+            child: Text(_uploading ? 'Enviando...' : 'Enviar foto do CREF/CRN'),
+          ),
+          if (_uploadMsg != null) ...[
+            const SizedBox(height: 12),
+            Text(_uploadMsg!, textAlign: TextAlign.center),
+          ],
+        ],
+      ),
     );
   }
 }
@@ -175,7 +239,8 @@ class CoachRejectedScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return BaseHomeScaffold(
       title: 'Cadastro Rejeitado',
-      message: 'Olá, $fullName\n\nSeu cadastro foi rejeitado.\nEntre em contato com o suporte.',
+      message:
+          'Olá, $fullName\n\nSeu cadastro foi rejeitado.\nEntre em contato com o suporte.',
     );
   }
 }
