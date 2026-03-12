@@ -2,6 +2,9 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../services/auth_service.dart';
+import 'auth_gate.dart';
+
 class AdminApprovalsScreen extends StatefulWidget {
   const AdminApprovalsScreen({super.key});
 
@@ -15,13 +18,28 @@ class _AdminApprovalsScreenState extends State<AdminApprovalsScreen> {
   bool _loading = false;
   String? _message;
 
-  Map<String, dynamic>? _current; // coach row
+  Map<String, dynamic>? _current; // item "claimed"
   final _noteController = TextEditingController();
+
+  // Lists
+  bool _listLoading = false;
+  String _listFilter = 'pending'; // pending | verified | rejected
+  List<Map<String, dynamic>> _list = [];
 
   @override
   void dispose() {
     _noteController.dispose();
     super.dispose();
+  }
+
+  Future<void> _logout() async {
+    await AuthService().signOut();
+    if (!mounted) return;
+
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(builder: (_) => const AuthGate()),
+      (route) => false,
+    );
   }
 
   Future<void> _claimNext() async {
@@ -43,7 +61,6 @@ class _AdminApprovalsScreenState extends State<AdminApprovalsScreen> {
         return;
       }
 
-      // rpc pode retornar lista com 1 item dependendo do driver
       if (res is List && res.isNotEmpty) {
         _current = Map<String, dynamic>.from(res.first);
       } else if (res is Map) {
@@ -79,12 +96,13 @@ class _AdminApprovalsScreenState extends State<AdminApprovalsScreen> {
       });
 
       setState(() {
-        _message = decision == 'verified'
-            ? 'Aprovado ✅'
-            : 'Reprovado ❌';
+        _message = decision == 'verified' ? 'Aprovado ✅' : 'Reprovado ❌';
         _current = null;
         _noteController.clear();
       });
+
+      // Atualiza lista automaticamente
+      await _loadList();
     } catch (e) {
       setState(() {
         _message = 'Erro ao salvar decisão: $e';
@@ -98,7 +116,6 @@ class _AdminApprovalsScreenState extends State<AdminApprovalsScreen> {
     final raw = row['verification_documents'];
     if (raw == null) return [];
 
-    // pode vir jsonb como List<dynamic> ou String
     if (raw is List) {
       return raw.map((e) => Map<String, dynamic>.from(e)).toList();
     }
@@ -116,54 +133,178 @@ class _AdminApprovalsScreenState extends State<AdminApprovalsScreen> {
     final path = (doc['path'] ?? '').toString();
     if (bucket.isEmpty || path.isEmpty) return null;
 
-    final res = await _client.storage.from(bucket).createSignedUrl(path, 60 * 30);
-    return res;
+    return await _client.storage.from(bucket).createSignedUrl(path, 60 * 30);
+  }
+
+  Future<void> _loadList() async {
+    setState(() {
+      _listLoading = true;
+    });
+
+    try {
+      final res = await _client
+          .from('coaches')
+          .select('id, verification_status, cref_number, verification_documents, assigned_to, assigned_at, reviewed_at')
+          .eq('verification_status', _listFilter)
+          .limit(100);
+
+      final rows = (res as List)
+          .map((e) => Map<String, dynamic>.from(e as Map))
+          .toList();
+
+      setState(() {
+        _list = rows;
+      });
+    } catch (e) {
+      setState(() {
+        _message = 'Erro ao carregar lista: $e';
+      });
+    } finally {
+      setState(() {
+        _listLoading = false;
+      });
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     final current = _current;
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Admin • Aprovação de Profissionais'),
-      ),
-      body: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 900),
-          child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                FilledButton(
-                  onPressed: _loading ? null : _claimNext,
-                  child: Text(_loading ? 'Carregando...' : 'Pegar próximo da fila'),
-                ),
-                if (_message != null) ...[
-                  const SizedBox(height: 12),
-                  Text(_message!, textAlign: TextAlign.center),
-                ],
-                const SizedBox(height: 24),
-                if (current == null)
-                  const Text(
-                    'Nenhum item selecionado. Clique em "Pegar próximo da fila".',
-                    textAlign: TextAlign.center,
-                  )
-                else
-                  Expanded(
-                    child: _ApprovalCard(
-                      row: current,
-                      noteController: _noteController,
-                      docsLoader: () => _docsFromRow(current),
-                      signedUrlLoader: _signedUrlForDoc,
-                      onApprove: _loading ? null : () => _review('verified'),
-                      onReject: _loading ? null : () => _review('rejected'),
-                    ),
-                  ),
-              ],
+    return DefaultTabController(
+      length: 2,
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text('Admin • Aprovação de Profissionais'),
+          actions: [
+            TextButton(
+              onPressed: _logout,
+              child: const Text('Sair'),
             ),
+          ],
+          bottom: const TabBar(
+            tabs: [
+              Tab(text: 'Fila (aprovar)'),
+              Tab(text: 'Listas'),
+            ],
           ),
+        ),
+        body: TabBarView(
+          children: [
+            // TAB 1: fila
+            Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 900),
+                child: Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      FilledButton(
+                        onPressed: _loading ? null : _claimNext,
+                        child: Text(_loading ? 'Carregando...' : 'Pegar próximo da fila'),
+                      ),
+                      if (_message != null) ...[
+                        const SizedBox(height: 12),
+                        Text(_message!, textAlign: TextAlign.center),
+                      ],
+                      const SizedBox(height: 24),
+                      if (current == null)
+                        const Text(
+                          'Nenhum item selecionado. Clique em "Pegar próximo da fila".',
+                          textAlign: TextAlign.center,
+                        )
+                      else
+                        Expanded(
+                          child: _ApprovalCard(
+                            row: current,
+                            noteController: _noteController,
+                            docsLoader: () => _docsFromRow(current),
+                            signedUrlLoader: _signedUrlForDoc,
+                            onApprove: _loading ? null : () => _review('verified'),
+                            onReject: _loading ? null : () => _review('rejected'),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+
+            // TAB 2: listas
+            Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 1100),
+                child: Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: DropdownButtonFormField<String>(
+                              value: _listFilter,
+                              decoration: const InputDecoration(
+                                labelText: 'Filtro',
+                                border: OutlineInputBorder(),
+                              ),
+                              items: const [
+                                DropdownMenuItem(
+                                  value: 'pending',
+                                  child: Text('Pendentes (pending)'),
+                                ),
+                                DropdownMenuItem(
+                                  value: 'verified',
+                                  child: Text('Aprovados (verified)'),
+                                ),
+                                DropdownMenuItem(
+                                  value: 'rejected',
+                                  child: Text('Reprovados (rejected)'),
+                                ),
+                              ],
+                              onChanged: (v) {
+                                if (v == null) return;
+                                setState(() => _listFilter = v);
+                              },
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          FilledButton(
+                            onPressed: _listLoading ? null : _loadList,
+                            child: Text(_listLoading ? 'Carregando...' : 'Carregar'),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 16),
+                      Expanded(
+                        child: _list.isEmpty
+                            ? const Center(
+                                child: Text('Clique em "Carregar" para ver a lista.'),
+                              )
+                            : ListView.separated(
+                                itemCount: _list.length,
+                                separatorBuilder: (_, __) => const Divider(height: 1),
+                                itemBuilder: (context, i) {
+                                  final row = _list[i];
+                                  final id = (row['id'] ?? '').toString();
+                                  final status = (row['verification_status'] ?? '').toString();
+                                  final cref = (row['cref_number'] ?? '').toString();
+                                  final docs = row['verification_documents'];
+
+                                  return ListTile(
+                                    title: Text('CREF/CRN: $cref'),
+                                    subtitle: Text('id: $id\nstatus: $status\nDocs: ${docs == null ? 0 : (docs is List ? docs.length : 1)}'),
+                                    isThreeLine: true,
+                                  );
+                                },
+                              ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -249,7 +390,8 @@ class _ApprovalCardState extends State<_ApprovalCard> {
                     onPressed: () async {
                       final url = await widget.signedUrlLoader(d);
                       if (url == null) return;
-                      // Abre em nova aba no web (melhor UX)
+
+                      // Abre em nova aba no web (melhor depois, mas aqui mostramos o link)
                       // ignore: use_build_context_synchronously
                       showDialog(
                         context: context,
