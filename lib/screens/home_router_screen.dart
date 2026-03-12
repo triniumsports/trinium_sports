@@ -4,6 +4,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../services/auth_service.dart';
 import '../services/verification_service.dart';
 import 'auth_gate.dart';
+import 'admin_approvals_screen.dart';
 
 class HomeRouterScreen extends StatefulWidget {
   const HomeRouterScreen({super.key});
@@ -32,7 +33,9 @@ class _HomeRouterScreenState extends State<HomeRouterScreen> {
       final role = (profile['user_role'] ?? '').toString();
       final fullName = (profile['full_name'] ?? '').toString();
 
-      if (role == 'athlete') {
+      if (role == 'admin') {
+        _resolved = const AdminApprovalsScreen();
+      } else if (role == 'athlete') {
         _resolved = AthleteHomeScreen(fullName: fullName);
       } else if (role == 'coach') {
         final user = Supabase.instance.client.auth.currentUser;
