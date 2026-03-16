@@ -1,72 +1,63 @@
-# Trinium Sports — Project State
+# Trinium Sports — Project State (Checkpoint)
 
-## Visão do produto
-Trinium Sports é um app que conecta atletas, treinadores e nutricionistas em uma mesma plataforma para entregar treino + nutrição com acompanhamento, reduzindo risco de lesão e overtraining.
+## Onde estamos
+- Frontend Flutter Web rodando no GitHub Codespaces.
+- Execução estável via script: `./run_web.sh` (build web + python server 8080).
+- Supabase conectado com Publishable Key e API URL.
+- Fluxo de autenticação em produção:
+  - signUp -> confirmação de e-mail -> signIn
+  - criação/garantia de profile sem sobrescrever user_role já existente
+- Perfis suportados: athlete, coach, admin.
 
-## Objetivo do MVP
-Validar a proposta com um fluxo simples:
-- Atleta cria conta
-- Usuário confirma e-mail no Supabase Auth
-- Usuário faz login
-- Perfil base é criado no banco
-- Atleta encontra/solicita treinador
-- Profissional recebe solicitações e aceita/rejeita
-- Atleta e profissional têm uma visão básica do vínculo
+## Backend (Supabase)
+- Postgres com RLS ativo.
+- Tabelas principais: profiles, athletes, coaches.
+- Coaches:
+  - verification_status: pending / verified / rejected
+  - cref_number obrigatório (coach/nutri).
+  - verification_documents (json) registra docs enviados.
+- Trigger criado:
+  - ao inserir profile com user_role = coach, cria linha em coaches automaticamente (evita INSERT via frontend e evita conflitos RLS).
 
-## Status atual do projeto
-- Backend no Supabase está ativo e acessível.
-- Frontend foi recriado em Flutter Web dentro do GitHub Codespaces.
-- Projeto Flutter base funcionando.
-- Supabase inicializando com sucesso no frontend.
-- Tela de autenticação (login/cadastro) carregando com sucesso.
-- Fluxo de cadastro já conversa com o Supabase.
-- Foi identificado e corrigido o problema de RLS no cadastro inicial:
-  - o perfil não deve ser criado antes de existir sessão autenticada.
-- O fluxo correto em produção é:
-  1. signUp no Auth
-  2. confirmação de e-mail
-  3. login
-  4. criação de profiles + athletes/coaches após sessão autenticada
-- O ambiente Codespaces apresentou instabilidade com `flutter run -d web-server`.
-- O modo estável de execução no Codespaces, até aqui, é:
-  1. `flutter build web`
-  2. `cd build/web`
-  3. `python3 -m http.server 8080`
+## Verificação de documento
+- Upload do documento do CREF/CRN no bucket Storage: `professional-verification` (bucket existente).
+- App do coach pendente mostra botão "Enviar foto do CREF/CRN".
+- Storage policies ajustadas:
+  - upload permitido apenas na pasta do próprio usuário (foldername(name)[1] = auth.uid()).
+  - leitura do próprio usuário.
+  - leitura admin (is_admin()) para aprovação no app.
+- Coach update policy:
+  - usuário pode atualizar o próprio registro para gravar verification_documents.
 
-## Estrutura atual do frontend
-Arquivos principais já criados:
-- `lib/core/supabase_config.dart`
-- `lib/main.dart`
-- `lib/services/auth_service.dart`
-- `lib/screens/auth_gate.dart`
+## Admin
+- Não existia admin inicialmente; admin é definido em `profiles.user_role = 'admin'`.
+- Corrigido bug: app não deve sobrescrever user_role para athlete no login.
+- Painel Admin Web criado:
+  - rota via HomeRouter quando user_role == admin.
+  - botão Sair.
+  - Tab Fila: pegar próximo (RPC) e aprovar/reprovar (RPC).
+  - Tab Listas: listar pendentes/aprovados/reprovados.
+- RPCs criadas para escala:
+  - claim_next_pending_coach (lock e timeout).
+  - review_coach (aprovar/reprovar + auditoria).
 
-## Regras já validadas
-- O projeto deve respeitar o fluxo real de produção.
-- A confirmação de e-mail do Supabase deve permanecer ativa.
-- A aprovação de negócio (ex.: treinador aprovado) é separada da confirmação de e-mail.
-- RLS continua como proteção principal do banco.
-- O backend continua sendo a source of truth.
+## Problemas resolvidos recentemente
+- Tela branca / build antigo no Codespaces: padronizado via build web + python e script `run_web.sh`.
+- Volta para "APP MINIMO OK": causa era build falhando ou build antigo; resolvido com fluxo padronizado.
+- user_role vazio em profiles causava erro pós-login; foi corrigido com backfill e guard.
+- Upload falhando com “Bucket not found”: corrigido para bucket correto `professional-verification`.
 
-## Problema já resolvido nesta etapa
-- Tela branca no browser:
-  - causa principal: forma de execução no Codespaces
-  - solução prática: usar build web + servidor Python local
-
-## Próximo passo imediato
-1. Consolidar no código a versão final do `auth_service.dart` com criação de perfil após login autenticado
-2. Ajustar a mensagem de cadastro para fluxo com confirmação de e-mail
-3. Testar ponta a ponta:
-   - cadastro
-   - confirmação de e-mail
-   - login
-   - criação de `profiles`
-   - criação de `athletes` ou `coaches`
-4. Depois disso, criar a primeira home pós-login por perfil
-
-## Observação importante
-Ao continuar em novos chats, usar estes arquivos como fonte de verdade:
-- `PROJECT_STATE.md`
-- `ROADMAP.md`
-- `DECISIONS.md`
-- `SPEC.md`
-- `SUPABASE_CONTRACT.md`
+## Próximos passos
+1) Melhorar UX do painel admin:
+   - abrir doc em nova aba automaticamente (signed URL).
+   - atalhos teclado (A aprova, R reprova, N próximo).
+   - mostrar nome/email do profissional (join profiles).
+2) Separar “coach” e “nutritionist” no cadastro:
+   - campo professional_type no coaches (coach/nutritionist/hybrid).
+3) Vínculo atleta -> profissional (coach_athlete_relation):
+   - listar profissionais verified
+   - solicitar vínculo
+   - aprovar/rejeitar vínculo pelo profissional
+4) Métricas operacionais:
+   - aprovados por hora/dia
+   - backlog
