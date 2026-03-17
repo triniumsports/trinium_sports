@@ -3,6 +3,8 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../services/auth_service.dart';
 import '../services/verification_service.dart';
+import 'professional_profile_form_screen.dart';
+import 'athlete_search_professionals_screen.dart';
 import 'auth_gate.dart';
 import 'admin_approvals_screen.dart';
 
@@ -43,13 +45,28 @@ class _HomeRouterScreenState extends State<HomeRouterScreen> {
 
         final coach = await Supabase.instance.client
             .from('coaches')
-            .select('verification_status')
+            .select('verification_status, professional_type, cref_number, phone_mobile, address_zip_code, specialties')
             .eq('id', user.id)
             .maybeSingle();
 
         final status = (coach?['verification_status'] ?? 'pending').toString();
+        final profType = (coach?['professional_type'] ?? '').toString().trim();
+        final reg = (coach?['cref_number'] ?? '').toString().trim();
+        final phone = (coach?['phone_mobile'] ?? '').toString().trim();
+        final zip = (coach?['address_zip_code'] ?? '').toString().trim();
+        final specs = coach?['specialties'];
+        final specsCount = (specs is List) ? specs.length : 0;
+
+        final isComplete = profType.isNotEmpty && reg.isNotEmpty && phone.isNotEmpty && zip.isNotEmpty && specsCount > 0;
+
+        if (!isComplete) {
+          _resolved = const ProfessionalProfileFormScreen();
+        } else {
+
 
         // No seu schema: aprovado = verified
+        }
+
         if (status == 'verified') {
           _resolved = CoachHomeScreen(fullName: fullName);
         } else if (status == 'rejected') {
@@ -152,6 +169,14 @@ class AthleteHomeScreen extends StatelessWidget {
     return BaseHomeScaffold(
       title: 'Home do Atleta',
       message: 'Bem-vindo, $fullName\n\nSeu perfil de atleta está ativo.',
+      extra: FilledButton(
+        onPressed: () {
+          Navigator.of(context).push(
+            MaterialPageRoute(builder: (_) => const AthleteSearchProfessionalsScreen()),
+          );
+        },
+        child: const Text('Buscar profissionais'),
+      ),
     );
   }
 }
