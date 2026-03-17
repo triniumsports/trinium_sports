@@ -195,7 +195,7 @@ class _CoachPendingScreenState extends State<CoachPendingScreen> {
     });
 
     try {
-      await VerificationService().pickAndUploadCrefOrCrn();
+      await VerificationService().pickAndUpload(docType: 'council');
       setState(() {
         _uploadMsg = 'Documento enviado com sucesso ✅\nAguarde validação.';
       });
@@ -220,8 +220,48 @@ class _CoachPendingScreenState extends State<CoachPendingScreen> {
       extra: Column(
         children: [
           FilledButton(
-            onPressed: _uploading ? null : _uploadDoc,
-            child: Text(_uploading ? 'Enviando...' : 'Enviar foto do CREF/CRN'),
+            onPressed: _uploading ? null : () async {
+              setState(() { _uploading = true; _uploadMsg = null; });
+              try {
+                await VerificationService().pickAndUpload(docType: 'identity');
+                setState(() { _uploadMsg = 'RG/CNH enviado ✅'; });
+              } catch (e) {
+                setState(() { _uploadMsg = 'Erro RG/CNH: $e'; });
+              } finally {
+                setState(() { _uploading = false; });
+              }
+            },
+            child: Text(_uploading ? 'Enviando...' : 'Enviar RG/CNH (foto ou PDF)'),
+          ),
+          const SizedBox(height: 10),
+          FilledButton(
+            onPressed: _uploading ? null : () async {
+              setState(() { _uploading = true; _uploadMsg = null; });
+              try {
+                await VerificationService().pickAndUpload(docType: 'council');
+                setState(() { _uploadMsg = 'Documento do Conselho enviado ✅'; });
+              } catch (e) {
+                setState(() { _uploadMsg = 'Erro Conselho: $e'; });
+              } finally {
+                setState(() { _uploading = false; });
+              }
+            },
+            child: Text(_uploading ? 'Enviando...' : 'Enviar documento do Conselho (CREF/CRN)'),
+          ),
+          const SizedBox(height: 10),
+          FilledButton(
+            onPressed: _uploading ? null : () async {
+              setState(() { _uploading = true; _uploadMsg = null; });
+              try {
+                await VerificationService().pickAndUpload(docType: 'lookup_print');
+                setState(() { _uploadMsg = 'Print da consulta pública enviado ✅'; });
+              } catch (e) {
+                setState(() { _uploadMsg = 'Erro Print: $e'; });
+              } finally {
+                setState(() { _uploading = false; });
+              }
+            },
+            child: Text(_uploading ? 'Enviando...' : 'Enviar print da consulta pública (ATIVO/BACHAREL)'),
           ),
           if (_uploadMsg != null) ...[
             const SizedBox(height: 12),

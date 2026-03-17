@@ -23,7 +23,7 @@ flutter analyze || true
 flutter clean
 rm -rf build
 
-flutter build web
+flutter build web --no-wasm-dry-run
 
 cd build/web
 python3 -m http.server 8080
