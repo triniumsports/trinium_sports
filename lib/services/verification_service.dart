@@ -6,16 +6,21 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 class VerificationService {
   final SupabaseClient _client = Supabase.instance.client;
 
+  // bucket existente no seu Supabase
   static const String bucket = 'professional-verification';
 
-  Future<void> pickAndUploadCrefOrCrn() async {
+  /// docType:
+  /// - identity (RG/CNH)
+  /// - council (CREF/CRN)
+  /// - lookup_print (print consulta pública)
+  Future<void> pickAndUpload({required String docType}) async {
     final user = _client.auth.currentUser;
     if (user == null) throw Exception('Usuário não autenticado.');
 
     final result = await FilePicker.platform.pickFiles(
       type: FileType.custom,
       allowedExtensions: ['jpg', 'jpeg', 'png', 'pdf'],
-      withData: true,
+      withData: true, // essencial no web
     );
 
     if (result == null || result.files.isEmpty) {
@@ -34,7 +39,7 @@ class VerificationService {
     final contentType = _guessContentType(ext);
 
     final objectPath =
-        '${user.id}/cref_crn_${DateTime.now().millisecondsSinceEpoch}.$ext';
+        '${user.id}/${docType}_${DateTime.now().millisecondsSinceEpoch}.$ext';
 
     await _client.storage.from(bucket).uploadBinary(
           objectPath,
@@ -46,6 +51,7 @@ class VerificationService {
         );
 
     final payload = {
+      'type': docType,
       'bucket': bucket,
       'path': objectPath,
       'filename': name,
@@ -64,10 +70,29 @@ class VerificationService {
 
     docs.add(payload);
 
-    await _client.from('coaches').update({
+    // Se já tem os 3 tipos, marca submitted_at e modo auto
+    final types = docs
+        .map((e) => (e is Map ? (e['type'] ?? '').toString() : ''))
+        .toSet();
+
+    final hasAll = types.contains('identity') &&
+        types.contains('council') &&
+        types.contains('lookup_print');
+
+    final update = <String, dynamic>{
       'verification_documents': docs,
       'verification_status': 'pending',
-    }).eq('id', user.id);
+    };
+
+    if (hasAll) {
+      update['verification_submitted_at'] = DateTime.now().toIso8601String();
+      update['verification_mode'] = 'auto';
+      update['auto_result'] = null;
+      update['auto_score'] = null;
+      update['auto_reason'] = null;
+    }
+
+    await _client.from('coaches').update(update).eq('id', user.id);
   }
 
   String _guessContentType(String ext) {

@@ -212,27 +212,6 @@ class CoachPendingScreen extends StatefulWidget {
 class _CoachPendingScreenState extends State<CoachPendingScreen> {
   bool _uploading = false;
   String? _uploadMsg;
-
-  Future<void> _uploadDoc() async {
-    setState(() {
-      _uploading = true;
-      _uploadMsg = null;
-    });
-
-    try {
-      await VerificationService().pickAndUpload(docType: 'council');
-      setState(() {
-        _uploadMsg = 'Documento enviado com sucesso ✅\nAguarde validação.';
-      });
-    } catch (e) {
-      setState(() {
-        _uploadMsg = 'Erro ao enviar documento: $e';
-      });
-    } finally {
-      setState(() {
-        _uploading = false;
-      });
-    }
   }
 
   @override
