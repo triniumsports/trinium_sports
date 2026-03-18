@@ -3,10 +3,10 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../services/auth_service.dart';
 import '../services/verification_service.dart';
-import 'professional_profile_form_screen.dart';
-import 'athlete_search_professionals_screen.dart';
 import 'auth_gate.dart';
 import 'admin_approvals_screen.dart';
+import 'professional_profile_form_screen.dart';
+import 'athlete_search_professionals_screen.dart';
 
 class HomeRouterScreen extends StatefulWidget {
   const HomeRouterScreen({super.key});
@@ -32,8 +32,12 @@ class _HomeRouterScreenState extends State<HomeRouterScreen> {
       final profile = await _authService.getMyProfile();
       if (profile == null) throw Exception('Perfil não encontrado.');
 
-      final role = (profile['user_role'] ?? '').toString();
+      final role = (profile['user_role'] ?? '').toString().trim().toLowerCase();
       final fullName = (profile['full_name'] ?? '').toString();
+
+      if (role.isEmpty) {
+        throw Exception('user_role inválido: (vazio)');
+      }
 
       if (role == 'admin') {
         _resolved = const AdminApprovalsScreen();
@@ -45,7 +49,8 @@ class _HomeRouterScreenState extends State<HomeRouterScreen> {
 
         final coach = await Supabase.instance.client
             .from('coaches')
-            .select('verification_status, professional_type, cref_number, phone_mobile, address_zip_code, specialties')
+            .select(
+                'verification_status, professional_type, cref_number, phone_mobile, address_zip_code, specialties')
             .eq('id', user.id)
             .maybeSingle();
 
@@ -57,22 +62,17 @@ class _HomeRouterScreenState extends State<HomeRouterScreen> {
         final specs = coach?['specialties'];
         final specsCount = (specs is List) ? specs.length : 0;
 
-        final isComplete = profType.isNotEmpty && reg.isNotEmpty && phone.isNotEmpty && zip.isNotEmpty && specsCount > 0;
+        final isComplete = profType.isNotEmpty &&
+            reg.isNotEmpty &&
+            phone.isNotEmpty &&
+            zip.isNotEmpty &&
+            specsCount > 0;
 
         if (!isComplete) {
           _resolved = const ProfessionalProfileFormScreen();
         } else {
-
-
-        // No seu schema: aprovado = verified
-        }
-
-        if (status == 'verified') {
+          // Novo modelo: sem trava de aprovação (docs são para auditoria).
           _resolved = CoachHomeScreen(fullName: fullName);
-        } else if (status == 'rejected') {
-          _resolved = CoachRejectedScreen(fullName: fullName);
-        } else {
-          _resolved = CoachPendingScreen(fullName: fullName, status: status);
         }
       } else {
         throw Exception('user_role inválido: $role');
@@ -87,9 +87,7 @@ class _HomeRouterScreenState extends State<HomeRouterScreen> {
   @override
   Widget build(BuildContext context) {
     if (_loading) {
-      return const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
-      );
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
     if (_error != null) {
@@ -137,7 +135,7 @@ class BaseHomeScaffold extends StatelessWidget {
           TextButton(
             onPressed: () => _logout(context),
             child: const Text('Sair'),
-          ),
+          )
         ],
       ),
       body: Center(
@@ -199,11 +197,7 @@ class CoachPendingScreen extends StatefulWidget {
   final String fullName;
   final String status;
 
-  const CoachPendingScreen({
-    super.key,
-    required this.fullName,
-    required this.status,
-  });
+  const CoachPendingScreen({super.key, required this.fullName, required this.status});
 
   @override
   State<CoachPendingScreen> createState() => _CoachPendingScreenState();
@@ -211,7 +205,22 @@ class CoachPendingScreen extends StatefulWidget {
 
 class _CoachPendingScreenState extends State<CoachPendingScreen> {
   bool _uploading = false;
-  String? _uploadMsg;
+  String? _msg;
+
+  Future<void> _upload(String type, String label) async {
+    setState(() {
+      _uploading = true;
+      _msg = null;
+    });
+
+    try {
+      await VerificationService().pickAndUpload(docType: type);
+      setState(() => _msg = '$label enviado ✅');
+    } catch (e) {
+      setState(() => _msg = 'Erro ($label): $e');
+    } finally {
+      setState(() => _uploading = false);
+    }
   }
 
   @override
@@ -220,56 +229,29 @@ class _CoachPendingScreenState extends State<CoachPendingScreen> {
       title: 'Aguardando Aprovação',
       message:
           'Olá, ${widget.fullName}\n\nStatus do cadastro: ${widget.status}\n\n'
-          'Envie uma foto do seu CREF/CRN para validação.',
+          'Envie os 3 itens para auditoria/validação:\n'
+          '1) RG/CNH\n2) Documento do Conselho\n3) Print da consulta pública',
       extra: Column(
         children: [
           FilledButton(
-            onPressed: _uploading ? null : () async {
-              setState(() { _uploading = true; _uploadMsg = null; });
-              try {
-                await VerificationService().pickAndUpload(docType: 'identity');
-                setState(() { _uploadMsg = 'RG/CNH enviado ✅'; });
-              } catch (e) {
-                setState(() { _uploadMsg = 'Erro RG/CNH: $e'; });
-              } finally {
-                setState(() { _uploading = false; });
-              }
-            },
+            onPressed: _uploading ? null : () => _upload('identity', 'RG/CNH'),
             child: Text(_uploading ? 'Enviando...' : 'Enviar RG/CNH (foto ou PDF)'),
           ),
           const SizedBox(height: 10),
           FilledButton(
-            onPressed: _uploading ? null : () async {
-              setState(() { _uploading = true; _uploadMsg = null; });
-              try {
-                await VerificationService().pickAndUpload(docType: 'council');
-                setState(() { _uploadMsg = 'Documento do Conselho enviado ✅'; });
-              } catch (e) {
-                setState(() { _uploadMsg = 'Erro Conselho: $e'; });
-              } finally {
-                setState(() { _uploading = false; });
-              }
-            },
+            onPressed: _uploading ? null : () => _upload('council', 'Conselho'),
             child: Text(_uploading ? 'Enviando...' : 'Enviar documento do Conselho (CREF/CRN)'),
           ),
           const SizedBox(height: 10),
           FilledButton(
-            onPressed: _uploading ? null : () async {
-              setState(() { _uploading = true; _uploadMsg = null; });
-              try {
-                await VerificationService().pickAndUpload(docType: 'lookup_print');
-                setState(() { _uploadMsg = 'Print da consulta pública enviado ✅'; });
-              } catch (e) {
-                setState(() { _uploadMsg = 'Erro Print: $e'; });
-              } finally {
-                setState(() { _uploading = false; });
-              }
-            },
-            child: Text(_uploading ? 'Enviando...' : 'Enviar print da consulta pública (ATIVO/BACHAREL)'),
+            onPressed: _uploading ? null : () => _upload('lookup_print', 'Print consulta pública'),
+            child: Text(_uploading
+                ? 'Enviando...'
+                : 'Enviar print da consulta pública (ATIVO/BACHAREL)'),
           ),
-          if (_uploadMsg != null) ...[
+          if (_msg != null) ...[
             const SizedBox(height: 12),
-            Text(_uploadMsg!, textAlign: TextAlign.center),
+            Text(_msg!, textAlign: TextAlign.center),
           ],
         ],
       ),
@@ -286,8 +268,7 @@ class CoachRejectedScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return BaseHomeScaffold(
       title: 'Cadastro Rejeitado',
-      message:
-          'Olá, $fullName\n\nSeu cadastro foi rejeitado.\nEntre em contato com o suporte.',
+      message: 'Olá, $fullName\n\nSeu cadastro foi rejeitado.\nEntre em contato com o suporte.',
     );
   }
 }
