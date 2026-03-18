@@ -1,5 +1,11 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+
+import '../services/verification_service.dart';
+import 'home_router_screen.dart';
 
 class ProfessionalProfileFormScreen extends StatefulWidget {
   const ProfessionalProfileFormScreen({super.key});
@@ -13,6 +19,7 @@ class _ProfessionalProfileFormScreenState extends State<ProfessionalProfileFormS
 
   bool _loading = true;
   bool _saving = false;
+  bool _uploading = false;
   String? _msg;
 
   final _nameController = TextEditingController();
@@ -23,6 +30,8 @@ class _ProfessionalProfileFormScreenState extends State<ProfessionalProfileFormS
 
   String _professionalType = 'coach'; // coach | nutritionist | hybrid
   final Set<String> _specialties = {};
+
+  String? _avatarUrl;
 
   static const Map<String, String> specialtyLabels = {
     'run': 'Corrida',
@@ -66,7 +75,7 @@ class _ProfessionalProfileFormScreenState extends State<ProfessionalProfileFormS
 
     try {
       final profile = await _client.from('profiles')
-          .select('full_name,email')
+          .select('full_name,email,avatar_url')
           .eq('id', user.id)
           .maybeSingle();
 
@@ -76,6 +85,9 @@ class _ProfessionalProfileFormScreenState extends State<ProfessionalProfileFormS
           .maybeSingle();
 
       _nameController.text = (profile?['full_name'] ?? '').toString();
+      _avatarUrl = (profile?['avatar_url'] ?? '').toString().trim();
+      if (_avatarUrl != null && _avatarUrl!.isEmpty) _avatarUrl = null;
+
       _professionalType = (coach?['professional_type'] ?? 'coach').toString();
       _regController.text = (coach?['cref_number'] ?? '').toString();
       _phoneController.text = (coach?['phone_mobile'] ?? '').toString();
@@ -102,7 +114,82 @@ class _ProfessionalProfileFormScreenState extends State<ProfessionalProfileFormS
     if (_regController.text.trim().isEmpty) return false;
     if (_specialties.isEmpty) return false;
     if (!['coach', 'nutritionist', 'hybrid'].contains(_professionalType)) return false;
+    if (_avatarUrl == null || _avatarUrl!.trim().isEmpty) return false; // foto obrigatória
     return true;
+  }
+
+  Future<void> _uploadAvatar() async {
+    final user = _client.auth.currentUser;
+    if (user == null) return;
+
+    setState(() {
+      _uploading = true;
+      _msg = null;
+    });
+
+    try {
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['jpg', 'jpeg', 'png'],
+        withData: true,
+      );
+      if (result == null || result.files.isEmpty) {
+        throw Exception('Nenhum arquivo selecionado.');
+      }
+
+      final file = result.files.single;
+      final Uint8List? bytes = file.bytes;
+      if (bytes == null || bytes.isEmpty) throw Exception('Falha ao ler arquivo.');
+
+      final ext = file.name.split('.').last.toLowerCase();
+      final path = '${user.id}/avatar_${DateTime.now().millisecondsSinceEpoch}.$ext';
+
+      await _client.storage.from('avatars').uploadBinary(
+        path,
+        bytes,
+        fileOptions: FileOptions(
+          contentType: ext == 'png' ? 'image/png' : 'image/jpeg',
+          upsert: true,
+        ),
+      );
+
+      final publicUrl = _client.storage.from('avatars').getPublicUrl(path);
+
+      await _client.from('profiles').update({
+        'avatar_url': publicUrl,
+      }).eq('id', user.id);
+
+      setState(() {
+        _avatarUrl = publicUrl;
+        _msg = 'Foto de perfil enviada ✅';
+      });
+    } catch (e) {
+      setState(() {
+        _msg = 'Erro ao enviar foto: $e';
+      });
+    } finally {
+      setState(() => _uploading = false);
+    }
+  }
+
+  Future<void> _uploadDoc(String docType, String label) async {
+    setState(() {
+      _uploading = true;
+      _msg = null;
+    });
+
+    try {
+      await VerificationService().pickAndUpload(docType: docType);
+      setState(() {
+        _msg = '$label enviado ✅';
+      });
+    } catch (e) {
+      setState(() {
+        _msg = 'Erro ($label): $e';
+      });
+    } finally {
+      setState(() => _uploading = false);
+    }
   }
 
   Future<void> _save() async {
@@ -111,7 +198,7 @@ class _ProfessionalProfileFormScreenState extends State<ProfessionalProfileFormS
 
     if (!_isValid()) {
       setState(() {
-        _msg = 'Preencha todos os campos obrigatórios.';
+        _msg = 'Preencha todos os campos obrigatórios (incluindo foto).';
       });
       return;
     }
@@ -122,12 +209,10 @@ class _ProfessionalProfileFormScreenState extends State<ProfessionalProfileFormS
     });
 
     try {
-      // Atualiza profile (nome)
       await _client.from('profiles').update({
         'full_name': _nameController.text.trim(),
       }).eq('id', user.id);
 
-      // Atualiza coach
       await _client.from('coaches').update({
         'professional_type': _professionalType,
         'cref_number': _regController.text.trim(),
@@ -137,12 +222,12 @@ class _ProfessionalProfileFormScreenState extends State<ProfessionalProfileFormS
         'specialties': _specialties.toList(),
       }).eq('id', user.id);
 
-      setState(() {
-        _msg = 'Perfil salvo com sucesso ✅';
-      });
-
+      // evita tela branca: volta para o router (recarrega lógica)
       if (!mounted) return;
-      Navigator.of(context).pop(true);
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(builder: (_) => const HomeRouterScreen()),
+        (route) => false,
+      );
     } catch (e) {
       setState(() {
         _msg = 'Erro ao salvar: $e';
@@ -155,18 +240,14 @@ class _ProfessionalProfileFormScreenState extends State<ProfessionalProfileFormS
   @override
   Widget build(BuildContext context) {
     if (_loading) {
-      return const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
-      );
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Perfil do Profissional'),
-      ),
+      appBar: AppBar(title: const Text('Perfil do Profissional')),
       body: Center(
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 720),
+          constraints: const BoxConstraints(maxWidth: 760),
           child: Padding(
             padding: const EdgeInsets.all(24),
             child: ListView(
@@ -175,6 +256,18 @@ class _ProfessionalProfileFormScreenState extends State<ProfessionalProfileFormS
                   'Complete seu perfil para aparecer na busca do atleta.',
                   textAlign: TextAlign.center,
                 ),
+                const SizedBox(height: 16),
+
+                // FOTO
+                OutlinedButton(
+                  onPressed: _uploading ? null : _uploadAvatar,
+                  child: Text(_uploading ? 'Enviando...' : 'Enviar foto de perfil (obrigatório)'),
+                ),
+                if (_avatarUrl != null) ...[
+                  const SizedBox(height: 8),
+                  Text('Foto OK ✅', textAlign: TextAlign.center),
+                ],
+
                 const SizedBox(height: 16),
 
                 TextField(
@@ -197,10 +290,7 @@ class _ProfessionalProfileFormScreenState extends State<ProfessionalProfileFormS
                     DropdownMenuItem(value: 'nutritionist', child: Text('Nutricionista')),
                     DropdownMenuItem(value: 'hybrid', child: Text('Híbrido')),
                   ],
-                  onChanged: (v) {
-                    if (v == null) return;
-                    setState(() => _professionalType = v);
-                  },
+                  onChanged: (v) => setState(() => _professionalType = v ?? 'coach'),
                 ),
                 const SizedBox(height: 12),
 
@@ -264,10 +354,31 @@ class _ProfessionalProfileFormScreenState extends State<ProfessionalProfileFormS
                   ),
                 ),
 
-                const SizedBox(height: 16),
+                const SizedBox(height: 18),
+                const Divider(),
+                const SizedBox(height: 12),
+                const Text('Documentos (obrigatório enviar os 3):'),
+                const SizedBox(height: 8),
+
+                FilledButton(
+                  onPressed: _uploading ? null : () => _uploadDoc('identity', 'RG/CNH'),
+                  child: const Text('Enviar RG/CNH (foto ou PDF)'),
+                ),
+                const SizedBox(height: 10),
+                FilledButton(
+                  onPressed: _uploading ? null : () => _uploadDoc('council', 'Documento do Conselho'),
+                  child: const Text('Enviar documento do Conselho (CREF/CRN)'),
+                ),
+                const SizedBox(height: 10),
+                FilledButton(
+                  onPressed: _uploading ? null : () => _uploadDoc('lookup_print', 'Print consulta pública'),
+                  child: const Text('Enviar print da consulta pública (ATIVO/BACHAREL)'),
+                ),
+
+                const SizedBox(height: 18),
                 FilledButton(
                   onPressed: _saving ? null : _save,
-                  child: Text(_saving ? 'Salvando...' : 'Salvar'),
+                  child: Text(_saving ? 'Salvando...' : 'Salvar e continuar'),
                 ),
 
                 if (_msg != null) ...[
