@@ -1,4 +1,7 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'home_router_screen.dart';
@@ -32,6 +35,7 @@ class _AthleteProfileFormScreenState extends State<AthleteProfileFormScreen> {
   final _vo2Controller = TextEditingController(); // opcional
 
   String _fitnessLevel = 'intermediate';
+  String? _avatarUrl;
   final _bmrController = TextEditingController(text: '1600');
   final _phaseController = TextEditingController(text: 'base');
   final _dietController = TextEditingController();
@@ -72,7 +76,7 @@ class _AthleteProfileFormScreenState extends State<AthleteProfileFormScreen> {
     try {
       final profile = await _client
           .from('profiles')
-          .select('full_name')
+          .select('full_name,avatar_url')
           .eq('id', user.id)
           .maybeSingle();
 
@@ -83,6 +87,8 @@ class _AthleteProfileFormScreenState extends State<AthleteProfileFormScreen> {
           .maybeSingle();
 
       _nameController.text = (profile?['full_name'] ?? '').toString();
+      _avatarUrl = (profile?['avatar_url'] ?? '').toString().trim();
+      if (_avatarUrl != null && _avatarUrl!.isEmpty) _avatarUrl = null;
 
       final bd = athlete?['birth_date'];
       if (bd != null) {
@@ -144,11 +150,66 @@ class _AthleteProfileFormScreenState extends State<AthleteProfileFormScreen> {
     return null;
   }
 
-  Future<void> _save() async {
+  
+  Future<void> _uploadAvatar() async {
     final user = _client.auth.currentUser;
     if (user == null) return;
 
     setState(() => _msg = null);
+
+    try {
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['jpg', 'jpeg', 'png'],
+        withData: true,
+      );
+      if (result == null || result.files.isEmpty) {
+        throw Exception('Nenhuma imagem selecionada.');
+      }
+
+      final file = result.files.single;
+      final Uint8List? bytes = file.bytes;
+      if (bytes == null || bytes.isEmpty) {
+        throw Exception('Falha ao ler a imagem no navegador.');
+      }
+
+      final ext = file.name.split('.').last.toLowerCase();
+      final path = '${user.id}/athlete_avatar_${DateTime.now().millisecondsSinceEpoch}.$ext';
+
+      await _client.storage.from('avatars').uploadBinary(
+        path,
+        bytes,
+        fileOptions: FileOptions(
+          contentType: ext == 'png' ? 'image/png' : 'image/jpeg',
+          upsert: true,
+        ),
+      );
+
+      final publicUrl = _client.storage.from('avatars').getPublicUrl(path);
+
+      await _client.from('profiles').update({
+        'avatar_url': publicUrl,
+      }).eq('id', user.id);
+
+      setState(() {
+        _avatarUrl = publicUrl;
+        _msg = 'Foto de perfil enviada ✅';
+      });
+    } catch (e) {
+      setState(() => _msg = 'Erro ao enviar foto: $e');
+    }
+  }
+
+Future<void> _save() async {
+    final user = _client.auth.currentUser;
+    if (user == null) return;
+
+    setState(() => _msg = null);
+
+    if (_avatarUrl == null || _avatarUrl!.trim().isEmpty) {
+      setState(() => _msg = 'Foto de perfil é obrigatória.');
+      return;
+    }
 
     if (_birthDate == null) {
       setState(() => _msg = 'Data de nascimento é obrigatória.');
@@ -240,6 +301,17 @@ class _AthleteProfileFormScreenState extends State<AthleteProfileFormScreen> {
                     'Complete seus dados para o motor calcular treinos com precisão.\nCampos com validação rígida.',
                     textAlign: TextAlign.center,
                   ),
+                  const SizedBox(height: 16),
+
+                  OutlinedButton(
+                    onPressed: _saving ? null : _uploadAvatar,
+                    child: const Text('Enviar foto de perfil (obrigatório)'),
+                  ),
+                  if (_avatarUrl != null) ...[
+                    const SizedBox(height: 8),
+                    Text('Foto OK ✅', textAlign: TextAlign.center),
+                  ],
+
                   const SizedBox(height: 16),
 
                   TextFormField(
