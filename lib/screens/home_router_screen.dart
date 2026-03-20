@@ -7,6 +7,7 @@ import 'auth_gate.dart';
 import 'admin_approvals_screen.dart';
 import 'professional_profile_form_screen.dart';
 import 'athlete_search_professionals_screen.dart';
+import 'athlete_profile_form_screen.dart';
 
 class HomeRouterScreen extends StatefulWidget {
   const HomeRouterScreen({super.key});
@@ -42,8 +43,48 @@ class _HomeRouterScreenState extends State<HomeRouterScreen> {
       if (role == 'admin') {
         _resolved = const AdminApprovalsScreen();
       } else if (role == 'athlete') {
-        _resolved = AthleteHomeScreen(fullName: fullName);
-      } else if (role == 'coach') {
+        final user = Supabase.instance.client.auth.currentUser;
+        if (user == null) throw Exception('Usuário não autenticado.');
+
+        final athlete = await Supabase.instance.client
+            .from('athletes')
+            .select('birth_date,gender,height_cm,weight_kg,resting_hr,max_hr,experience_level')
+            .eq('id', user.id)
+            .maybeSingle();
+
+        // Se não existe linha ainda, força onboarding
+        if (athlete == null) {
+          _resolved = const AthleteProfileFormScreen();
+        } else {
+          final bd = (athlete['birth_date'] ?? '').toString().trim();
+          final g = (athlete['gender'] ?? '').toString().trim();
+          final exp = (athlete['experience_level'] ?? '').toString().trim();
+
+          final h = athlete['height_cm'];
+          final w = athlete['weight_kg'];
+          final rhr = athlete['resting_hr'];
+          final mhr = athlete['max_hr'];
+
+          final isOk =
+              bd.isNotEmpty &&
+              g.isNotEmpty &&
+              exp.isNotEmpty &&
+              h != null &&
+              w != null &&
+              rhr != null &&
+              mhr != null &&
+              (h is num && h > 0) &&
+              (w is num && w > 0) &&
+              (rhr is num && rhr > 0) &&
+              (mhr is num && mhr > 0);
+
+          if (!isOk) {
+            _resolved = const AthleteProfileFormScreen();
+          } else {
+            _resolved = AthleteHomeScreen(fullName: fullName);
+          }
+        }
+      } else if (role == 'coach') {  } else if (role == 'coach') {
         final user = Supabase.instance.client.auth.currentUser;
         if (user == null) throw Exception('Usuário não autenticado.');
 
