@@ -7,6 +7,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../services/verification_service.dart';
 import 'home_router_screen.dart';
+import '../services/edge_functions_service.dart';
 
 class ProfessionalProfileFormScreen extends StatefulWidget {
   const ProfessionalProfileFormScreen({super.key});
@@ -145,21 +146,15 @@ class _ProfessionalProfileFormScreenState extends State<ProfessionalProfileFormS
       final ext = file.name.split('.').last.toLowerCase();
       final path = '${user.id}/avatar_${DateTime.now().millisecondsSinceEpoch}.$ext';
 
-      final res = await _client.functions.invoke('upload-avatar', body: {
-        'bucket': 'avatars',
-        'path': path,
-        'contentType': ext == 'png' ? 'image/png' : 'image/jpeg',
-        'base64': base64Encode(bytes),
-      });
-
-      final data = res.data;
-      if (data == null || data['publicUrl'] == null) {
-        throw Exception('Falha no upload-avatar: resposta inválida');
-      }
+      final data = await EdgeFunctionsService.uploadAvatar(
+        bucket: 'avatars',
+        path: path,
+        contentType: ext == 'png' ? 'image/png' : 'image/jpeg',
+        base64: base64Encode(bytes),
+      );
 
       final publicUrl = data['publicUrl'] as String;
-
-      await _client.from('profiles').update({
+await _client.from('profiles').update({
         'avatar_url': publicUrl,
       }).eq('id', user.id);
 setState(() {
