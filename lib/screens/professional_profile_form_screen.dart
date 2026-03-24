@@ -1,4 +1,5 @@
 import 'dart:typed_data';
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
@@ -144,22 +145,24 @@ class _ProfessionalProfileFormScreenState extends State<ProfessionalProfileFormS
       final ext = file.name.split('.').last.toLowerCase();
       final path = '${user.id}/avatar_${DateTime.now().millisecondsSinceEpoch}.$ext';
 
-      await _client.storage.from('avatars').uploadBinary(
-        path,
-        bytes,
-        fileOptions: FileOptions(
-          contentType: ext == 'png' ? 'image/png' : 'image/jpeg',
-          upsert: true,
-        ),
-      );
+      final res = await _client.functions.invoke('upload-avatar', body: {
+        'bucket': 'avatars',
+        'path': path,
+        'contentType': ext == 'png' ? 'image/png' : 'image/jpeg',
+        'base64': base64Encode(bytes),
+      });
 
-      final publicUrl = _client.storage.from('avatars').getPublicUrl(path);
+      final data = res.data;
+      if (data == null || data['publicUrl'] == null) {
+        throw Exception('Falha no upload-avatar: resposta inválida');
+      }
+
+      final publicUrl = data['publicUrl'] as String;
 
       await _client.from('profiles').update({
         'avatar_url': publicUrl,
       }).eq('id', user.id);
-
-      setState(() {
+setState(() {
         _avatarUrl = publicUrl;
         _msg = 'Foto de perfil enviada ✅';
       });
