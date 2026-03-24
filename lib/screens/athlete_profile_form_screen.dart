@@ -6,6 +6,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'home_router_screen.dart';
+import 'athlete_agenda_screen.dart';
 import '../services/edge_functions_service.dart';
 
 class AthleteProfileFormScreen extends StatefulWidget {
@@ -268,11 +269,10 @@ Future<void> _save() async {
       await _client.from('athlete_zones').upsert({'athlete_id': user.id});
 
       if (!mounted) return;
-      Navigator.of(context).pushAndRemoveUntil(
-        MaterialPageRoute(builder: (_) => const HomeRouterScreen()),
-        (route) => false,
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(builder: (_) => const AthleteAgendaScreen()),
       );
-    } catch (e) {
+} catch (e) {
       setState(() => _msg = 'Erro ao salvar: $e');
     } finally {
       setState(() => _saving = false);
