@@ -7,6 +7,7 @@ import 'auth_gate.dart';
 import 'admin_approvals_screen.dart';
 import 'professional_profile_form_screen.dart';
 import 'athlete_search_professionals_screen.dart';
+import 'athlete_onboarding_screen.dart';
 import 'athlete_profile_form_screen.dart';
 
 class HomeRouterScreen extends StatefulWidget {
