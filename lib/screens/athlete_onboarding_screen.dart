@@ -45,6 +45,10 @@ class _AthleteOnboardingScreenState extends State<AthleteOnboardingScreen> {
   final _patternTitleController = TextEditingController(text: 'Meu padrão semanal');
   final List<_PatternSession> _sessions = [];
 
+  // Tipos de atividade carregados do backend (activity_types)
+  Map<String, String> _activityLabels = {};
+
+
   // --- (3) RECOMENDADOS ---
   String _phase = 'base';
   final _vo2Controller = TextEditingController();
@@ -77,15 +81,7 @@ class _AthleteOnboardingScreenState extends State<AthleteOnboardingScreen> {
     'afternoon': 'Tarde',
     'evening': 'Noite',
   };
-  static const Map<String, String> activityLabels = {
-    'run': 'Corrida',
-    'swim': 'Natação',
-    'bike': 'Ciclismo',
-    'strength': 'Força / Musculação',
-    'trail': 'Trail',
-    'triathlon': 'Triatlo',
-  };
-
+  
   @override
   void dispose() {
     _nameController.dispose();
@@ -160,6 +156,44 @@ class _AthleteOnboardingScreenState extends State<AthleteOnboardingScreen> {
     }
 
     try {
+      // activity_types (fonte de verdade do backend)
+      final types = await _client
+          .from('activity_types')
+          .select('id,is_active')
+          .order('id');
+
+      // Labels PT-BR (UI) para IDs do backend (internacional)
+      final labelOverrides = <String, String>{
+        'running': 'Corrida (asfalto)',
+        'trail_running': 'Trail (trilha)',
+        'cycling': 'Ciclismo (road)',
+        'mtb': 'MTB',
+        'swimming': 'Natação (piscina)',
+        'open_water_swimming': 'Natação (águas abertas)',
+        'swimrun': 'Swimrun',
+        'triathlon': 'Triatlo',
+        'strength': 'Força / Musculação',
+        'rest': 'Descanso',
+      };
+
+      final map = <String, String>{};
+      if (types is List) {
+        for (final r in types) {
+          final id = (r['id'] ?? '').toString();
+          if (id.isEmpty) continue;
+          final isActive = r['is_active'];
+          if (isActive is bool && isActive == false) continue;
+
+          // escondemos "rest" na UI de disponibilidade (não é modalidade de treino)
+          if (id == 'rest') continue;
+
+          map[id] = labelOverrides[id] ?? id;
+        }
+      }
+
+      _activityLabels = map;
+
+
       // profiles
       final profile = await _client.from('profiles')
           .select('full_name,avatar_url')
@@ -281,6 +315,28 @@ class _AthleteOnboardingScreenState extends State<AthleteOnboardingScreen> {
     if (user == null) return;
 
     try {
+      // activity_types (fonte de verdade do backend)
+      final types = await _client
+          .from('activity_types')
+          .select('id,name_pt,name,is_active')
+          .order('id');
+
+      final map = <String, String>{};
+      if (types is List) {
+        for (final r in types) {
+          final id = (r['id'] ?? '').toString();
+          if (id.isEmpty) continue;
+          final isActive = r['is_active'];
+          if (isActive is bool && isActive == false) {
+            continue;
+          }
+          final label = ((r['name_pt'] ?? r['name']) ?? id).toString();
+          map[id] = label;
+        }
+      }
+      _activityLabels = map;
+
+
       // FilePicker web (já existe no projeto)
       // Vamos usar FilePicker.platform diretamente como no seu código atual
       // evitando mexer em dependências.
@@ -360,6 +416,28 @@ class _AthleteOnboardingScreenState extends State<AthleteOnboardingScreen> {
     setState(() => _saving = true);
 
     try {
+      // activity_types (fonte de verdade do backend)
+      final types = await _client
+          .from('activity_types')
+          .select('id,name_pt,name,is_active')
+          .order('id');
+
+      final map = <String, String>{};
+      if (types is List) {
+        for (final r in types) {
+          final id = (r['id'] ?? '').toString();
+          if (id.isEmpty) continue;
+          final isActive = r['is_active'];
+          if (isActive is bool && isActive == false) {
+            continue;
+          }
+          final label = ((r['name_pt'] ?? r['name']) ?? id).toString();
+          map[id] = label;
+        }
+      }
+      _activityLabels = map;
+
+
       // 1) profiles + athletes
       await _client.from('profiles').update({'full_name': _nameController.text.trim()}).eq('id', user.id);
 
@@ -634,7 +712,7 @@ class _AthleteOnboardingScreenState extends State<AthleteOnboardingScreen> {
                         const SizedBox(height: 8),
                         _WeeklyConstraintsGrid(
                           availability: _availability,
-                          activityLabels: activityLabels,
+                          activityLabels: _activityLabels,
                           dayLabels: dayLabels,
                           slotLabels: slotLabels,
                           onToggle: (slot, day, activity) {
@@ -668,7 +746,7 @@ class _AthleteOnboardingScreenState extends State<AthleteOnboardingScreen> {
                           Column(
                             children: _sessions.map((s) {
                               return ListTile(
-                                title: Text('${dayLabels[s.dayOfWeek]} • ${slotLabels[s.timeSlot]} • ${activityLabels[s.activityTypeId]}'),
+                                title: Text('${dayLabels[s.dayOfWeek]} • ${slotLabels[s.timeSlot]} • ${_activityLabels[s.activityTypeId] ?? s.activityTypeId}'),
                                 subtitle: Text('Duração: ${s.durationMinutes} min | Ordem: ${s.sessionOrder}'),
                                 trailing: IconButton(
                                   icon: const Icon(Icons.delete),
@@ -683,7 +761,7 @@ class _AthleteOnboardingScreenState extends State<AthleteOnboardingScreen> {
                           onPressed: () async {
                             final created = await showDialog<_PatternSession>(
                               context: context,
-                              builder: (_) => _AddSessionDialog(activityLabels: activityLabels),
+                              builder: (_) => _AddSessionDialog(activityLabels: _activityLabels.isEmpty ? {'running':'Corrida (asfalto)'} : _activityLabels),
                             );
                             if (created != null) setState(() => _sessions.add(created));
                           },
@@ -764,7 +842,7 @@ class _AthleteOnboardingScreenState extends State<AthleteOnboardingScreen> {
                             labelText: 'Modalidade (activity_type_id)',
                             border: OutlineInputBorder(),
                           ),
-                          items: activityLabels.entries
+                          items: _activityLabels.entries
                               .map((e) => DropdownMenuItem(value: e.key, child: Text(e.value)))
                               .toList(),
                           onChanged: (v) => setState(() => _raceActivity = v ?? 'run'),
@@ -965,7 +1043,7 @@ class _AddSessionDialog extends StatefulWidget {
 class _AddSessionDialogState extends State<_AddSessionDialog> {
   int _day = 1;
   String _slot = 'morning';
-  String _activity = 'run';
+  String _activity = 'running';
   int _duration = 45;
   int _order = 1;
 
