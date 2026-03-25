@@ -49,12 +49,15 @@ class _AthleteAgendaScreenState extends State<AthleteAgendaScreen> {
 
   // activity_type_id (backend)
   static const Map<String, String> activityLabels = {
-    'run': 'Corrida',
-    'swim': 'Natação',
-    'bike': 'Ciclismo',
-    'strength': 'Força / Musculação',
-    'trail': 'Trail',
+    'running': 'Corrida (asfalto)',
+    'trail_running': 'Trail (trilha)',
+    'cycling': 'Ciclismo (road)',
+    'mtb': 'MTB',
+    'swimming': 'Natação (piscina)',
+    'open_water_swimming': 'Natação (águas abertas)',
+    'swimrun': 'Swimrun',
     'triathlon': 'Triatlo',
+    'strength': 'Força / Musculação',
   };
 
   @override
@@ -493,7 +496,7 @@ class _AddSessionDialog extends StatefulWidget {
 class _AddSessionDialogState extends State<_AddSessionDialog> {
   int _day = 1;
   String _slot = 'morning';
-  String _activity = 'run';
+  String _activity = 'running';
   int _duration = 45;
   int _order = 1;
 
@@ -534,7 +537,7 @@ class _AddSessionDialogState extends State<_AddSessionDialog> {
               items: widget.activityLabels.entries
                   .map((e) => DropdownMenuItem(value: e.key, child: Text(e.value)))
                   .toList(),
-              onChanged: (v) => setState(() => _activity = v ?? 'run'),
+              onChanged: (v) => setState(() => _activity = v ?? 'running'),
             ),
             TextFormField(
               initialValue: '45',
