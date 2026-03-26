@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -29,7 +30,7 @@ class _AthleteRecommendedScreenState extends State<AthleteRecommendedScreen> {
   final _pz4 = TextEditingController();
   final _pz5 = TextEditingController();
 
-  // ✅ IDs REAIS do backend
+  // ✅ IDs reais do backend
   static const Map<String, String> activityLabels = {
     'running': 'Corrida (asfalto)',
     'trail_running': 'Trail (trilha)',
@@ -42,7 +43,7 @@ class _AthleteRecommendedScreenState extends State<AthleteRecommendedScreen> {
     'strength': 'Força / Musculação',
   };
 
-  // target_races (múltiplas provas)
+  // multi provas
   final List<RaceDraft> _races = [];
 
   @override
@@ -60,6 +61,7 @@ class _AthleteRecommendedScreenState extends State<AthleteRecommendedScreen> {
   double? _toDouble(String s) => double.tryParse(s.trim().replaceAll(',', '.'));
   int? _toInt(String s) => int.tryParse(s.trim());
 
+  // pace "mm:ss" -> sec
   double? _paceToSec(String s) {
     final v = s.trim();
     if (v.isEmpty) return null;
@@ -146,13 +148,11 @@ class _AthleteRecommendedScreenState extends State<AthleteRecommendedScreen> {
     });
 
     try {
-      // athletes
       await _client.from('athletes').update({
         'phase': _phase,
         'vo2_max': _vo2Controller.text.trim().isEmpty ? null : _toDouble(_vo2Controller.text),
       }).eq('id', user.id);
 
-      // athlete_zones
       await _client.from('athlete_zones').upsert({
         'athlete_id': user.id,
         'hr_max': _hrMaxController.text.trim().isEmpty ? null : _toInt(_hrMaxController.text),
@@ -163,31 +163,20 @@ class _AthleteRecommendedScreenState extends State<AthleteRecommendedScreen> {
         'pace_z5_sec': _paceToSec(_pz5.text),
       });
 
-      // target_races: inserir TODAS as provas do calendário (sem apagar as antigas)
       if (_races.isNotEmpty) {
         final inserts = _races.map((r) => {
               'athlete_id': user.id,
-              'activity_type_id': r.activityTypeId, // ✅ id real (trail_running etc)
+              'activity_type_id': r.activityTypeId,
               'name': r.name.trim(),
               'race_date': r.raceDate.toIso8601String().substring(0, 10),
-              'distance_meters': r.distanceMeters,
+              'distance_meters': r.distanceMeters, // ✅ total (mono ou soma)
               'elevation_gain_m': r.elevationGainM ?? 0,
               'priority': r.priority,
               'status': 'planned',
+              'notes': r.notes, // ✅ JSON com splits quando multiesporte
             }).toList();
 
-        try {
-          await _client.from('target_races').insert(inserts);
-        } catch (e) {
-          // Mensagem amigável caso seu backend valide com race_definitions
-          setState(() {
-            _msg =
-                'Erro ao salvar provas. Isso pode acontecer se o backend exigir um race_definition compatível.\n'
-                'Dica: confirme se existe race_definitions para activity_type_id e faixa de distância.\n\n'
-                'Erro: $e';
-          });
-          return;
-        }
+        await _client.from('target_races').insert(inserts);
       }
 
       if (!mounted) return;
@@ -204,9 +193,7 @@ class _AthleteRecommendedScreenState extends State<AthleteRecommendedScreen> {
 
   @override
   Widget build(BuildContext context) {
-    if (_loading) {
-      return const Scaffold(body: Center(child: CircularProgressIndicator()));
-    }
+    if (_loading) return const Scaffold(body: Center(child: CircularProgressIndicator()));
 
     return Scaffold(
       appBar: AppBar(title: const Text('Recomendados (melhoram o motor)')),
@@ -218,19 +205,17 @@ class _AthleteRecommendedScreenState extends State<AthleteRecommendedScreen> {
             child: ListView(
               children: [
                 const Text(
-                  'Esses dados não são obrigatórios para começar, mas aumentam muito a precisão do Trinium.\n'
-                  'Aqui você também pode cadastrar seu calendário anual de provas.',
+                  'Você pode cadastrar seu calendário anual de provas.\n'
+                  'Triatlo e Swimrun permitem informar distâncias por esporte (o motor usa isso depois).',
                   textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: 16),
 
-                // Phase
                 DropdownButtonFormField<String>(
                   value: _phase,
                   decoration: const InputDecoration(
-                    labelText: 'Fase atual do ciclo (athletes.phase)',
+                    labelText: 'Fase do ciclo (athletes.phase)',
                     border: OutlineInputBorder(),
-                    helperText: 'Guia periodização e volume do plano.',
                   ),
                   items: const [
                     DropdownMenuItem(value: 'base', child: Text('Base')),
@@ -246,7 +231,7 @@ class _AthleteRecommendedScreenState extends State<AthleteRecommendedScreen> {
                   controller: _vo2Controller,
                   keyboardType: TextInputType.number,
                   decoration: const InputDecoration(
-                    labelText: 'VO2max (athletes.vo2_max) — opcional',
+                    labelText: 'VO2max (opcional)',
                     border: OutlineInputBorder(),
                   ),
                 ),
@@ -255,30 +240,29 @@ class _AthleteRecommendedScreenState extends State<AthleteRecommendedScreen> {
                 const Divider(),
                 const SizedBox(height: 12),
 
-                const Text('Zonas (athlete_zones) — recomendado para corrida'),
+                const Text('Zonas (recomendado)'),
                 const SizedBox(height: 8),
 
                 TextField(
                   controller: _hrMaxController,
                   keyboardType: TextInputType.number,
                   decoration: const InputDecoration(
-                    labelText: 'FC máxima para zonas (athlete_zones.hr_max) — opcional',
+                    labelText: 'FC máxima para zonas (opcional)',
                     border: OutlineInputBorder(),
                   ),
                 ),
                 const SizedBox(height: 12),
 
-                _paceField(_pz1, 'Pace Z1 (pace_z1_sec) — mm:ss'),
-                _paceField(_pz2, 'Pace Z2 (pace_z2_sec) — mm:ss'),
-                _paceField(_pz3, 'Pace Z3 (pace_z3_sec) — mm:ss'),
-                _paceField(_pz4, 'Pace Z4 (pace_z4_sec) — mm:ss'),
-                _paceField(_pz5, 'Pace Z5 (pace_z5_sec) — mm:ss'),
+                _paceField(_pz1, 'Pace Z1 — mm:ss'),
+                _paceField(_pz2, 'Pace Z2 — mm:ss'),
+                _paceField(_pz3, 'Pace Z3 — mm:ss'),
+                _paceField(_pz4, 'Pace Z4 — mm:ss'),
+                _paceField(_pz5, 'Pace Z5 — mm:ss'),
 
                 const SizedBox(height: 16),
                 const Divider(),
                 const SizedBox(height: 12),
 
-                // ✅ Multi-race
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
@@ -291,10 +275,6 @@ class _AthleteRecommendedScreenState extends State<AthleteRecommendedScreen> {
                   ],
                 ),
                 const SizedBox(height: 8),
-                const Text(
-                  'Você pode cadastrar várias provas. O motor usa isso para priorizar picos e periodização.',
-                ),
-                const SizedBox(height: 12),
 
                 if (_races.isEmpty)
                   const Text('Nenhuma prova adicionada ainda.')
@@ -308,9 +288,10 @@ class _AthleteRecommendedScreenState extends State<AthleteRecommendedScreen> {
                           title: Text('${activityLabels[r.activityTypeId] ?? r.activityTypeId} • ${r.name}'),
                           subtitle: Text(
                             'Data: ${r.raceDate.toIso8601String().substring(0, 10)}'
-                            ' | Distância: ${r.distanceMeters ?? '-'}'
+                            ' | Distância total: ${r.distanceMeters ?? '-'}'
                             ' | Elevação: ${r.elevationGainM ?? 0}'
-                            ' | Prioridade: ${r.priority}',
+                            ' | Prioridade: ${r.priority}'
+                            '${r.notes == null ? '' : ' | Splits: OK'}',
                           ),
                           trailing: IconButton(
                             icon: const Icon(Icons.delete),
@@ -347,7 +328,6 @@ class _AthleteRecommendedScreenState extends State<AthleteRecommendedScreen> {
         decoration: InputDecoration(
           labelText: label,
           border: const OutlineInputBorder(),
-          helperText: 'Formato: mm:ss (ex.: 05:10).',
         ),
       ),
     );
@@ -362,6 +342,9 @@ class RaceDraft {
   final double? elevationGainM;
   final String priority;
 
+  /// JSON string com splits quando multiesporte (triathlon/swimrun)
+  final String? notes;
+
   RaceDraft({
     required this.activityTypeId,
     required this.name,
@@ -369,6 +352,7 @@ class RaceDraft {
     required this.distanceMeters,
     required this.elevationGainM,
     required this.priority,
+    required this.notes,
   });
 }
 
@@ -384,16 +368,31 @@ class _AddRaceDialogState extends State<AddRaceDialog> {
   String _activity = 'trail_running';
   final _nameController = TextEditingController();
   DateTime? _date;
+
+  // mono
   final _distanceController = TextEditingController();
+
+  // multiesporte
+  final _swimController = TextEditingController();
+  final _bikeController = TextEditingController();
+  final _runController = TextEditingController();
+
   final _elevController = TextEditingController();
   String _priority = 'A';
 
   double? _toDouble(String s) => double.tryParse(s.trim().replaceAll(',', '.'));
 
+  bool get _isTriathlon => _activity == 'triathlon';
+  bool get _isSwimrun => _activity == 'swimrun';
+  bool get _isMulti => _isTriathlon || _isSwimrun;
+
   @override
   void dispose() {
     _nameController.dispose();
     _distanceController.dispose();
+    _swimController.dispose();
+    _bikeController.dispose();
+    _runController.dispose();
     _elevController.dispose();
     super.dispose();
   }
@@ -438,26 +437,74 @@ class _AddRaceDialogState extends State<AddRaceDialog> {
                 );
                 if (picked != null) setState(() => _date = picked);
               },
-              child: Text(_date == null ? 'Selecionar data (obrigatório)' : 'Data: ${_date!.toIso8601String().substring(0, 10)}'),
+              child: Text(_date == null
+                  ? 'Selecionar data (obrigatório)'
+                  : 'Data: ${_date!.toIso8601String().substring(0, 10)}'),
             ),
             const SizedBox(height: 10),
 
-            TextField(
-              controller: _distanceController,
-              keyboardType: TextInputType.number,
-              decoration: const InputDecoration(
-                labelText: 'Distância em metros (opcional)',
-                border: OutlineInputBorder(),
-                helperText: 'Ex.: 21000 para 21K',
+            if (!_isMulti) ...[
+              TextField(
+                controller: _distanceController,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(
+                  labelText: 'Distância total (metros) — opcional',
+                  border: OutlineInputBorder(),
+                  helperText: 'Ex.: 21000 para 21K',
+                ),
               ),
-            ),
+            ] else ...[
+              const Align(
+                alignment: Alignment.centerLeft,
+                child: Text('Distância por esporte (metros) — recomendado'),
+              ),
+              const SizedBox(height: 8),
+
+              TextField(
+                controller: _swimController,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(
+                  labelText: 'Natação (m)',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 10),
+
+              if (_isTriathlon) ...[
+                TextField(
+                  controller: _bikeController,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(
+                    labelText: 'Ciclismo (m)',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 10),
+              ],
+
+              TextField(
+                controller: _runController,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(
+                  labelText: 'Corrida (m)',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+
+              const SizedBox(height: 8),
+              const Text(
+                'O app salva a distância total (soma) e guarda os splits em "notes" (JSON).',
+                style: TextStyle(fontSize: 12),
+              ),
+            ],
+
             const SizedBox(height: 10),
 
             TextField(
               controller: _elevController,
               keyboardType: TextInputType.number,
               decoration: const InputDecoration(
-                labelText: 'Ganho elevação em metros (opcional)',
+                labelText: 'Ganho elevação (m) — opcional',
                 border: OutlineInputBorder(),
               ),
             ),
@@ -491,15 +538,46 @@ class _AddRaceDialogState extends State<AddRaceDialog> {
               return;
             }
 
+            double? totalDistance;
+            String? notesJson;
+
+            if (!_isMulti) {
+              totalDistance = _distanceController.text.trim().isEmpty ? null : _toDouble(_distanceController.text);
+            } else {
+              final swim = _toDouble(_swimController.text) ?? 0;
+              final run = _toDouble(_runController.text) ?? 0;
+              final bike = _isTriathlon ? (_toDouble(_bikeController.text) ?? 0) : 0;
+
+              if (swim <= 0 || run <= 0 || (_isTriathlon && bike <= 0)) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Preencha as distâncias dos esportes (todas > 0).')),
+                );
+                return;
+              }
+
+              totalDistance = swim + bike + run;
+
+              final notes = {
+                'splits': {
+                  'swim_m': swim,
+                  if (_isTriathlon) 'bike_m': bike,
+                  'run_m': run,
+                },
+                'note': 'Splits informados pelo atleta. Total_distance_m = soma.',
+              };
+              notesJson = jsonEncode(notes);
+            }
+
             Navigator.pop(
               context,
               RaceDraft(
                 activityTypeId: _activity,
                 name: name,
                 raceDate: _date!,
-                distanceMeters: _distanceController.text.trim().isEmpty ? null : _toDouble(_distanceController.text),
+                distanceMeters: totalDistance,
                 elevationGainM: _elevController.text.trim().isEmpty ? null : _toDouble(_elevController.text),
                 priority: _priority,
+                notes: notesJson,
               ),
             );
           },
