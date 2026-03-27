@@ -7,6 +7,7 @@ import 'auth_gate.dart';
 import 'admin_approvals_screen.dart';
 import 'professional_profile_form_screen.dart';
 import 'athlete_search_professionals_screen.dart';
+import 'coach_requests_screen.dart';
 import 'athlete_onboarding_screen.dart';
 import 'athlete_profile_form_screen.dart';
 
@@ -186,6 +187,16 @@ class BaseHomeScaffold extends StatelessWidget {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
+          FilledButton(
+            onPressed: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const CoachRequestsScreen()),
+              );
+            },
+            child: const Text('Solicitações de atletas'),
+          ),
+          const SizedBox(height: 12),
+
               Text(message, textAlign: TextAlign.center),
               if (extra != null) ...[
                 const SizedBox(height: 16),
