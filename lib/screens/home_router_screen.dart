@@ -187,17 +187,7 @@ class BaseHomeScaffold extends StatelessWidget {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-          FilledButton(
-            onPressed: () {
-              Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const CoachRequestsScreen()),
-              );
-            },
-            child: const Text('Solicitações de atletas'),
-          ),
-          const SizedBox(height: 12),
-
-              Text(message, textAlign: TextAlign.center),
+Text(message, textAlign: TextAlign.center),
               if (extra != null) ...[
                 const SizedBox(height: 16),
                 extra!,
