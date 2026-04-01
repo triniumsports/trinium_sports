@@ -13,10 +13,12 @@ class ProfessionalProfileFormScreen extends StatefulWidget {
   const ProfessionalProfileFormScreen({super.key});
 
   @override
-  State<ProfessionalProfileFormScreen> createState() => _ProfessionalProfileFormScreenState();
+  State<ProfessionalProfileFormScreen> createState() =>
+      _ProfessionalProfileFormScreenState();
 }
 
-class _ProfessionalProfileFormScreenState extends State<ProfessionalProfileFormScreen> {
+class _ProfessionalProfileFormScreenState
+    extends State<ProfessionalProfileFormScreen> {
   final _client = Supabase.instance.client;
 
   bool _loading = true;
@@ -30,10 +32,12 @@ class _ProfessionalProfileFormScreenState extends State<ProfessionalProfileFormS
   final _bioController = TextEditingController();
   final _regController = TextEditingController();
 
-  String _professionalType = 'coach'; // coach | nutritionist | hybrid
+  String _professionalType = 'coach';
   final Set<String> _specialties = {};
 
   String? _avatarUrl;
+  String _verificationStatus = 'pending';
+  final Set<String> _uploadedDocTypes = {};
 
   static const Map<String, String> specialtyLabels = {
     'run': 'Corrida',
@@ -45,9 +49,16 @@ class _ProfessionalProfileFormScreenState extends State<ProfessionalProfileFormS
   };
 
   String get _regLabel {
-    if (_professionalType == 'nutritionist') return 'CRN (Registro profissional)';
-    return 'CREF (Registro profissional)';
+    if (_professionalType == 'nutritionist') {
+      return 'CRN / Registro profissional';
+    }
+    return 'CREF / Registro profissional';
   }
+
+  bool get _hasAllDocs =>
+      _uploadedDocTypes.contains('identity') &&
+      _uploadedDocTypes.contains('council') &&
+      _uploadedDocTypes.contains('lookup_print');
 
   @override
   void dispose() {
@@ -76,13 +87,17 @@ class _ProfessionalProfileFormScreenState extends State<ProfessionalProfileFormS
     }
 
     try {
-      final profile = await _client.from('profiles')
+      final profile = await _client
+          .from('profiles')
           .select('full_name,email,avatar_url')
           .eq('id', user.id)
           .maybeSingle();
 
-      final coach = await _client.from('coaches')
-          .select('professional_type,cref_number,phone_mobile,address_zip_code,bio,specialties')
+      final coach = await _client
+          .from('coaches')
+          .select(
+            'professional_type,cref_number,license_number,phone_mobile,address_zip_code,bio,specialties,verification_status,verification_documents',
+          )
           .eq('id', user.id)
           .maybeSingle();
 
@@ -91,16 +106,32 @@ class _ProfessionalProfileFormScreenState extends State<ProfessionalProfileFormS
       if (_avatarUrl != null && _avatarUrl!.isEmpty) _avatarUrl = null;
 
       _professionalType = (coach?['professional_type'] ?? 'coach').toString();
-      _regController.text = (coach?['cref_number'] ?? '').toString();
+
+      final cref = (coach?['cref_number'] ?? '').toString().trim();
+      final license = (coach?['license_number'] ?? '').toString().trim();
+      _regController.text = cref.isNotEmpty ? cref : license;
+
       _phoneController.text = (coach?['phone_mobile'] ?? '').toString();
       _zipController.text = (coach?['address_zip_code'] ?? '').toString();
       _bioController.text = (coach?['bio'] ?? '').toString();
+      _verificationStatus =
+          (coach?['verification_status'] ?? 'pending').toString();
 
       final specs = coach?['specialties'];
+      _specialties.clear();
       if (specs is List) {
-        _specialties
-          ..clear()
-          ..addAll(specs.map((e) => e.toString()));
+        _specialties.addAll(specs.map((e) => e.toString()));
+      }
+
+      _uploadedDocTypes.clear();
+      final docs = coach?['verification_documents'];
+      if (docs is List) {
+        for (final d in docs) {
+          if (d is Map && d['type'] != null) {
+            final type = d['type'].toString().trim();
+            if (type.isNotEmpty) _uploadedDocTypes.add(type);
+          }
+        }
       }
     } catch (e) {
       _msg = 'Erro ao carregar dados: $e';
@@ -115,8 +146,11 @@ class _ProfessionalProfileFormScreenState extends State<ProfessionalProfileFormS
     if (_zipController.text.trim().isEmpty) return false;
     if (_regController.text.trim().isEmpty) return false;
     if (_specialties.isEmpty) return false;
-    if (!['coach', 'nutritionist', 'hybrid'].contains(_professionalType)) return false;
-    if (_avatarUrl == null || _avatarUrl!.trim().isEmpty) return false; // foto obrigatória
+    if (!['coach', 'nutritionist', 'hybrid'].contains(_professionalType)) {
+      return false;
+    }
+    if (_avatarUrl == null || _avatarUrl!.trim().isEmpty) return false;
+    if (!_hasAllDocs) return false;
     return true;
   }
 
@@ -141,7 +175,9 @@ class _ProfessionalProfileFormScreenState extends State<ProfessionalProfileFormS
 
       final file = result.files.single;
       final Uint8List? bytes = file.bytes;
-      if (bytes == null || bytes.isEmpty) throw Exception('Falha ao ler arquivo.');
+      if (bytes == null || bytes.isEmpty) {
+        throw Exception('Falha ao ler arquivo.');
+      }
 
       final ext = file.name.split('.').last.toLowerCase();
       final path = '${user.id}/avatar_${DateTime.now().millisecondsSinceEpoch}.$ext';
@@ -154,10 +190,12 @@ class _ProfessionalProfileFormScreenState extends State<ProfessionalProfileFormS
       );
 
       final publicUrl = data['publicUrl'] as String;
-await _client.from('profiles').update({
+
+      await _client.from('profiles').update({
         'avatar_url': publicUrl,
       }).eq('id', user.id);
-setState(() {
+
+      setState(() {
         _avatarUrl = publicUrl;
         _msg = 'Foto de perfil enviada ✅';
       });
@@ -178,8 +216,12 @@ setState(() {
 
     try {
       await VerificationService().pickAndUpload(docType: docType);
+      await _load();
+
       setState(() {
-        _msg = '$label enviado ✅';
+        _msg = _hasAllDocs
+            ? '$label enviado ✅ Documentação completa. Profissional aprovado automaticamente.'
+            : '$label enviado ✅';
       });
     } catch (e) {
       setState(() {
@@ -196,7 +238,8 @@ setState(() {
 
     if (!_isValid()) {
       setState(() {
-        _msg = 'Preencha todos os campos obrigatórios (incluindo foto).';
+        _msg =
+            'Preencha todos os campos obrigatórios, envie a foto e os 3 documentos.';
       });
       return;
     }
@@ -211,16 +254,25 @@ setState(() {
         'full_name': _nameController.text.trim(),
       }).eq('id', user.id);
 
-      await _client.from('coaches').update({
+      final updateCoach = <String, dynamic>{
         'professional_type': _professionalType,
-        'cref_number': _regController.text.trim(),
         'phone_mobile': _phoneController.text.trim(),
         'address_zip_code': _zipController.text.trim(),
         'bio': _bioController.text.trim(),
         'specialties': _specialties.toList(),
-      }).eq('id', user.id);
+        'verification_status': 'approved',
+      };
 
-      // evita tela branca: volta para o router (recarrega lógica)
+      if (_professionalType == 'nutritionist') {
+        updateCoach['license_number'] = _regController.text.trim();
+        updateCoach['cref_number'] = null;
+      } else {
+        updateCoach['cref_number'] = _regController.text.trim();
+        updateCoach['license_number'] = _regController.text.trim();
+      }
+
+      await _client.from('coaches').update(updateCoach).eq('id', user.id);
+
       if (!mounted) return;
       Navigator.of(context).pushAndRemoveUntil(
         MaterialPageRoute(builder: (_) => const HomeRouterScreen()),
@@ -235,10 +287,45 @@ setState(() {
     }
   }
 
+  Widget _docStatusTile({
+    required String title,
+    required String type,
+  }) {
+    final ok = _uploadedDocTypes.contains(type);
+
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(14),
+        color: ok ? const Color(0xFFEAF8EE) : const Color(0xFFFFF4E5),
+        border: Border.all(
+          color: ok ? const Color(0xFF4CAF50) : const Color(0xFFFFB74D),
+        ),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            ok ? Icons.check_circle : Icons.pending,
+            color: ok ? const Color(0xFF2E7D32) : const Color(0xFFEF6C00),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              ok ? '$title enviado' : '$title pendente',
+              style: const TextStyle(fontWeight: FontWeight.w600),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_loading) {
-      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
+      );
     }
 
     return Scaffold(
@@ -254,16 +341,38 @@ setState(() {
                   'Complete seu perfil para aparecer na busca do atleta.',
                   textAlign: TextAlign.center,
                 ),
+                const SizedBox(height: 12),
+
+                Container(
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(14),
+                    color: _verificationStatus == 'approved'
+                        ? const Color(0xFFEAF8EE)
+                        : const Color(0xFFFFF4E5),
+                  ),
+                  child: Text(
+                    _verificationStatus == 'approved'
+                        ? 'Status atual: aprovado automaticamente ✅'
+                        : 'Status atual: pendente. Envie os 3 documentos para aprovação automática.',
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                ),
+
                 const SizedBox(height: 16),
 
-                // FOTO
                 OutlinedButton(
                   onPressed: _uploading ? null : _uploadAvatar,
-                  child: Text(_uploading ? 'Enviando...' : 'Enviar foto de perfil (obrigatório)'),
+                  child: Text(
+                    _uploading
+                        ? 'Enviando...'
+                        : 'Enviar foto de perfil (obrigatório)',
+                  ),
                 ),
                 if (_avatarUrl != null) ...[
                   const SizedBox(height: 8),
-                  Text('Foto OK ✅', textAlign: TextAlign.center),
+                  const Text('Foto OK ✅', textAlign: TextAlign.center),
                 ],
 
                 const SizedBox(height: 16),
@@ -285,10 +394,15 @@ setState(() {
                   ),
                   items: const [
                     DropdownMenuItem(value: 'coach', child: Text('Treinador')),
-                    DropdownMenuItem(value: 'nutritionist', child: Text('Nutricionista')),
+                    DropdownMenuItem(
+                      value: 'nutritionist',
+                      child: Text('Nutricionista'),
+                    ),
                     DropdownMenuItem(value: 'hybrid', child: Text('Híbrido')),
                   ],
-                  onChanged: (v) => setState(() => _professionalType = v ?? 'coach'),
+                  onChanged: (v) {
+                    setState(() => _professionalType = v ?? 'coach');
+                  },
                 ),
                 const SizedBox(height: 12),
 
@@ -355,28 +469,57 @@ setState(() {
                 const SizedBox(height: 18),
                 const Divider(),
                 const SizedBox(height: 12),
-                const Text('Documentos (obrigatório enviar os 3):'),
-                const SizedBox(height: 8),
+                const Text(
+                  'Documentos obrigatórios para aprovação automática:',
+                ),
+                const SizedBox(height: 12),
 
+                _docStatusTile(
+                  title: 'RG/CNH',
+                  type: 'identity',
+                ),
+                const SizedBox(height: 10),
                 FilledButton(
-                  onPressed: _uploading ? null : () => _uploadDoc('identity', 'RG/CNH'),
+                  onPressed: _uploading
+                      ? null
+                      : () => _uploadDoc('identity', 'RG/CNH'),
                   child: const Text('Enviar RG/CNH (foto ou PDF)'),
                 ),
-                const SizedBox(height: 10),
-                FilledButton(
-                  onPressed: _uploading ? null : () => _uploadDoc('council', 'Documento do Conselho'),
-                  child: const Text('Enviar documento do Conselho (CREF/CRN)'),
+
+                const SizedBox(height: 14),
+                _docStatusTile(
+                  title: 'Documento do conselho',
+                  type: 'council',
                 ),
                 const SizedBox(height: 10),
                 FilledButton(
-                  onPressed: _uploading ? null : () => _uploadDoc('lookup_print', 'Print consulta pública'),
-                  child: const Text('Enviar print da consulta pública (ATIVO/BACHAREL)'),
+                  onPressed: _uploading
+                      ? null
+                      : () => _uploadDoc('council', 'Documento do Conselho'),
+                  child: const Text('Enviar documento do Conselho (CREF/CRN)'),
+                ),
+
+                const SizedBox(height: 14),
+                _docStatusTile(
+                  title: 'Print consulta pública',
+                  type: 'lookup_print',
+                ),
+                const SizedBox(height: 10),
+                FilledButton(
+                  onPressed: _uploading
+                      ? null
+                      : () => _uploadDoc('lookup_print', 'Print consulta pública'),
+                  child: const Text(
+                    'Enviar print da consulta pública (ATIVO/BACHAREL)',
+                  ),
                 ),
 
                 const SizedBox(height: 18),
                 FilledButton(
                   onPressed: _saving ? null : _save,
-                  child: Text(_saving ? 'Salvando...' : 'Salvar e continuar'),
+                  child: Text(
+                    _saving ? 'Salvando...' : 'Salvar e continuar',
+                  ),
                 ),
 
                 if (_msg != null) ...[

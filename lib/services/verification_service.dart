@@ -6,13 +6,8 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 class VerificationService {
   final SupabaseClient _client = Supabase.instance.client;
 
-  // bucket existente no seu Supabase
   static const String bucket = 'professional-verification';
 
-  /// docType:
-  /// - identity (RG/CNH)
-  /// - council (CREF/CRN)
-  /// - lookup_print (print consulta pública)
   Future<void> pickAndUpload({required String docType}) async {
     final user = _client.auth.currentUser;
     if (user == null) throw Exception('Usuário não autenticado.');
@@ -20,7 +15,7 @@ class VerificationService {
     final result = await FilePicker.platform.pickFiles(
       type: FileType.custom,
       allowedExtensions: ['jpg', 'jpeg', 'png', 'pdf'],
-      withData: true, // essencial no web
+      withData: true,
     );
 
     if (result == null || result.files.isEmpty) {
@@ -70,7 +65,6 @@ class VerificationService {
 
     docs.add(payload);
 
-    // Se já tem os 3 tipos, marca submitted_at e modo auto
     final types = docs
         .map((e) => (e is Map ? (e['type'] ?? '').toString() : ''))
         .toSet();
@@ -81,15 +75,12 @@ class VerificationService {
 
     final update = <String, dynamic>{
       'verification_documents': docs,
-      'verification_status': 'pending',
+      'verification_status': hasAll ? 'approved' : 'pending',
     };
 
     if (hasAll) {
       update['verification_submitted_at'] = DateTime.now().toIso8601String();
       update['verification_mode'] = 'auto';
-      update['auto_result'] = null;
-      update['auto_score'] = null;
-      update['auto_reason'] = null;
     }
 
     await _client.from('coaches').update(update).eq('id', user.id);
