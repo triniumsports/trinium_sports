@@ -63,6 +63,13 @@ class VerificationService {
     final List<dynamic> docs =
         current is List ? List<dynamic>.from(current) : <dynamic>[];
 
+    docs.removeWhere((e) {
+      if (e is Map) {
+        return (e['type'] ?? '').toString() == docType;
+      }
+      return false;
+    });
+
     docs.add(payload);
 
     final types = docs
@@ -73,17 +80,10 @@ class VerificationService {
         types.contains('council') &&
         types.contains('lookup_print');
 
-    final update = <String, dynamic>{
+    await _client.from('coaches').update({
       'verification_documents': docs,
       'verification_status': hasAll ? 'approved' : 'pending',
-    };
-
-    if (hasAll) {
-      update['verification_submitted_at'] = DateTime.now().toIso8601String();
-      update['verification_mode'] = 'auto';
-    }
-
-    await _client.from('coaches').update(update).eq('id', user.id);
+    }).eq('id', user.id);
   }
 
   String _guessContentType(String ext) {

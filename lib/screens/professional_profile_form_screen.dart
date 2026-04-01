@@ -1,13 +1,13 @@
-import 'dart:typed_data';
 import 'dart:convert';
+import 'dart:typed_data';
 
-import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../services/edge_functions_service.dart';
 import '../services/verification_service.dart';
 import 'home_router_screen.dart';
-import '../services/edge_functions_service.dart';
 
 class ProfessionalProfileFormScreen extends StatefulWidget {
   const ProfessionalProfileFormScreen({super.key});
@@ -49,16 +49,21 @@ class _ProfessionalProfileFormScreenState
   };
 
   String get _regLabel {
-    if (_professionalType == 'nutritionist') {
-      return 'CRN / Registro profissional';
-    }
-    return 'CREF / Registro profissional';
+    return _professionalType == 'nutritionist'
+        ? 'CRN / Registro profissional'
+        : 'CREF / Registro profissional';
   }
 
   bool get _hasAllDocs =>
       _uploadedDocTypes.contains('identity') &&
       _uploadedDocTypes.contains('council') &&
       _uploadedDocTypes.contains('lookup_print');
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
 
   @override
   void dispose() {
@@ -70,18 +75,12 @@ class _ProfessionalProfileFormScreenState
     super.dispose();
   }
 
-  @override
-  void initState() {
-    super.initState();
-    _load();
-  }
-
   Future<void> _load() async {
     final user = _client.auth.currentUser;
     if (user == null) {
       setState(() {
-        _msg = 'Usuário não autenticado.';
         _loading = false;
+        _msg = 'Usuário não autenticado.';
       });
       return;
     }
@@ -103,9 +102,13 @@ class _ProfessionalProfileFormScreenState
 
       _nameController.text = (profile?['full_name'] ?? '').toString();
       _avatarUrl = (profile?['avatar_url'] ?? '').toString().trim();
-      if (_avatarUrl != null && _avatarUrl!.isEmpty) _avatarUrl = null;
+      if ((_avatarUrl ?? '').isEmpty) _avatarUrl = null;
 
-      _professionalType = (coach?['professional_type'] ?? 'coach').toString();
+      _professionalType =
+          (coach?['professional_type'] ?? 'coach').toString().trim();
+      if (!['coach', 'nutritionist'].contains(_professionalType)) {
+        _professionalType = 'coach';
+      }
 
       final cref = (coach?['cref_number'] ?? '').toString().trim();
       final license = (coach?['license_number'] ?? '').toString().trim();
@@ -117,8 +120,8 @@ class _ProfessionalProfileFormScreenState
       _verificationStatus =
           (coach?['verification_status'] ?? 'pending').toString();
 
-      final specs = coach?['specialties'];
       _specialties.clear();
+      final specs = coach?['specialties'];
       if (specs is List) {
         _specialties.addAll(specs.map((e) => e.toString()));
       }
@@ -129,14 +132,18 @@ class _ProfessionalProfileFormScreenState
         for (final d in docs) {
           if (d is Map && d['type'] != null) {
             final type = d['type'].toString().trim();
-            if (type.isNotEmpty) _uploadedDocTypes.add(type);
+            if (type.isNotEmpty) {
+              _uploadedDocTypes.add(type);
+            }
           }
         }
       }
     } catch (e) {
       _msg = 'Erro ao carregar dados: $e';
     } finally {
-      setState(() => _loading = false);
+      if (mounted) {
+        setState(() => _loading = false);
+      }
     }
   }
 
@@ -146,9 +153,6 @@ class _ProfessionalProfileFormScreenState
     if (_zipController.text.trim().isEmpty) return false;
     if (_regController.text.trim().isEmpty) return false;
     if (_specialties.isEmpty) return false;
-    if (!['coach', 'nutritionist', 'hybrid'].contains(_professionalType)) {
-      return false;
-    }
     if (_avatarUrl == null || _avatarUrl!.trim().isEmpty) return false;
     if (!_hasAllDocs) return false;
     return true;
@@ -169,12 +173,14 @@ class _ProfessionalProfileFormScreenState
         allowedExtensions: ['jpg', 'jpeg', 'png'],
         withData: true,
       );
+
       if (result == null || result.files.isEmpty) {
         throw Exception('Nenhum arquivo selecionado.');
       }
 
       final file = result.files.single;
       final Uint8List? bytes = file.bytes;
+
       if (bytes == null || bytes.isEmpty) {
         throw Exception('Falha ao ler arquivo.');
       }
@@ -220,7 +226,7 @@ class _ProfessionalProfileFormScreenState
 
       setState(() {
         _msg = _hasAllDocs
-            ? '$label enviado ✅ Documentação completa. Profissional aprovado automaticamente.'
+            ? '$label enviado ✅ Documentação completa. Aprovação automática liberada.'
             : '$label enviado ✅';
       });
     } catch (e) {
@@ -239,7 +245,7 @@ class _ProfessionalProfileFormScreenState
     if (!_isValid()) {
       setState(() {
         _msg =
-            'Preencha todos os campos obrigatórios, envie a foto e os 3 documentos.';
+            'Preencha nome, telefone, CEP, registro, especialidades, foto e envie os 3 documentos.';
       });
       return;
     }
@@ -254,7 +260,7 @@ class _ProfessionalProfileFormScreenState
         'full_name': _nameController.text.trim(),
       }).eq('id', user.id);
 
-      final updateCoach = <String, dynamic>{
+      final updateData = <String, dynamic>{
         'professional_type': _professionalType,
         'phone_mobile': _phoneController.text.trim(),
         'address_zip_code': _zipController.text.trim(),
@@ -264,14 +270,14 @@ class _ProfessionalProfileFormScreenState
       };
 
       if (_professionalType == 'nutritionist') {
-        updateCoach['license_number'] = _regController.text.trim();
-        updateCoach['cref_number'] = null;
+        updateData['license_number'] = _regController.text.trim();
+        updateData['cref_number'] = null;
       } else {
-        updateCoach['cref_number'] = _regController.text.trim();
-        updateCoach['license_number'] = _regController.text.trim();
+        updateData['cref_number'] = _regController.text.trim();
+        updateData['license_number'] = _regController.text.trim();
       }
 
-      await _client.from('coaches').update(updateCoach).eq('id', user.id);
+      await _client.from('coaches').update(updateData).eq('id', user.id);
 
       if (!mounted) return;
       Navigator.of(context).pushAndRemoveUntil(
@@ -324,210 +330,235 @@ class _ProfessionalProfileFormScreenState
   Widget build(BuildContext context) {
     if (_loading) {
       return const Scaffold(
+        backgroundColor: Colors.white,
         body: Center(child: CircularProgressIndicator()),
       );
     }
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Perfil do Profissional')),
+      backgroundColor: const Color(0xFFF7F7F9),
+      appBar: AppBar(
+        title: const Text('Perfil do Profissional'),
+      ),
       body: Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 760),
-          child: Padding(
+          child: ListView(
             padding: const EdgeInsets.all(24),
-            child: ListView(
-              children: [
-                const Text(
-                  'Complete seu perfil para aparecer na busca do atleta.',
-                  textAlign: TextAlign.center,
-                ),
-                const SizedBox(height: 12),
-
-                Container(
-                  padding: const EdgeInsets.all(14),
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(14),
-                    color: _verificationStatus == 'approved'
-                        ? const Color(0xFFEAF8EE)
-                        : const Color(0xFFFFF4E5),
-                  ),
-                  child: Text(
-                    _verificationStatus == 'approved'
-                        ? 'Status atual: aprovado automaticamente ✅'
-                        : 'Status atual: pendente. Envie os 3 documentos para aprovação automática.',
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(fontWeight: FontWeight.w600),
-                  ),
-                ),
-
-                const SizedBox(height: 16),
-
-                OutlinedButton(
-                  onPressed: _uploading ? null : _uploadAvatar,
-                  child: Text(
-                    _uploading
-                        ? 'Enviando...'
-                        : 'Enviar foto de perfil (obrigatório)',
-                  ),
-                ),
-                if (_avatarUrl != null) ...[
-                  const SizedBox(height: 8),
-                  const Text('Foto OK ✅', textAlign: TextAlign.center),
-                ],
-
-                const SizedBox(height: 16),
-
-                TextField(
-                  controller: _nameController,
-                  decoration: const InputDecoration(
-                    labelText: 'Nome (obrigatório)',
-                    border: OutlineInputBorder(),
-                  ),
-                ),
-                const SizedBox(height: 12),
-
-                DropdownButtonFormField<String>(
-                  value: _professionalType,
-                  decoration: const InputDecoration(
-                    labelText: 'Tipo (obrigatório)',
-                    border: OutlineInputBorder(),
-                  ),
-                  items: const [
-                    DropdownMenuItem(value: 'coach', child: Text('Treinador')),
-                    DropdownMenuItem(
-                      value: 'nutritionist',
-                      child: Text('Nutricionista'),
+            children: [
+              Container(
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(18),
+                  boxShadow: const [
+                    BoxShadow(
+                      blurRadius: 16,
+                      offset: Offset(0, 8),
+                      color: Color(0x12000000),
                     ),
-                    DropdownMenuItem(value: 'hybrid', child: Text('Híbrido')),
                   ],
-                  onChanged: (v) {
-                    setState(() => _professionalType = v ?? 'coach');
-                  },
                 ),
-                const SizedBox(height: 12),
-
-                TextField(
-                  controller: _regController,
-                  decoration: InputDecoration(
-                    labelText: '$_regLabel (obrigatório)',
-                    border: const OutlineInputBorder(),
-                  ),
-                ),
-                const SizedBox(height: 12),
-
-                TextField(
-                  controller: _phoneController,
-                  decoration: const InputDecoration(
-                    labelText: 'Celular (obrigatório)',
-                    border: OutlineInputBorder(),
-                  ),
-                ),
-                const SizedBox(height: 12),
-
-                TextField(
-                  controller: _zipController,
-                  decoration: const InputDecoration(
-                    labelText: 'CEP (obrigatório)',
-                    border: OutlineInputBorder(),
-                  ),
-                ),
-                const SizedBox(height: 12),
-
-                const Text('Especialidades (selecione ao menos 1):'),
-                const SizedBox(height: 8),
-                Wrap(
-                  spacing: 10,
-                  runSpacing: 10,
-                  children: specialtyLabels.entries.map((e) {
-                    final selected = _specialties.contains(e.key);
-                    return FilterChip(
-                      selected: selected,
-                      label: Text(e.value),
-                      onSelected: (v) {
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    const Text(
+                      'Complete seu perfil para aparecer na busca do atleta.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Container(
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(14),
+                        color: _verificationStatus == 'approved'
+                            ? const Color(0xFFEAF8EE)
+                            : const Color(0xFFFFF4E5),
+                      ),
+                      child: Text(
+                        _verificationStatus == 'approved'
+                            ? 'Status atual: aprovado automaticamente ✅'
+                            : 'Status atual: pendente. Envie os 3 documentos para aprovação automática.',
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    OutlinedButton(
+                      onPressed: _uploading ? null : _uploadAvatar,
+                      child: Text(
+                        _uploading
+                            ? 'Enviando...'
+                            : (_avatarUrl == null
+                                ? 'Enviar foto de perfil (obrigatório)'
+                                : 'Trocar foto de perfil'),
+                      ),
+                    ),
+                    if (_avatarUrl != null) ...[
+                      const SizedBox(height: 8),
+                      const Text(
+                        'Foto OK ✅',
+                        textAlign: TextAlign.center,
+                      ),
+                    ],
+                    const SizedBox(height: 16),
+                    TextField(
+                      controller: _nameController,
+                      decoration: const InputDecoration(
+                        labelText: 'Nome (obrigatório)',
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    DropdownButtonFormField<String>(
+                      value: _professionalType,
+                      decoration: const InputDecoration(
+                        labelText: 'Tipo (obrigatório)',
+                        border: OutlineInputBorder(),
+                      ),
+                      items: const [
+                        DropdownMenuItem(
+                          value: 'coach',
+                          child: Text('Treinador'),
+                        ),
+                        DropdownMenuItem(
+                          value: 'nutritionist',
+                          child: Text('Nutricionista'),
+                        ),
+                      ],
+                      onChanged: (v) {
                         setState(() {
-                          if (v) {
-                            _specialties.add(e.key);
-                          } else {
-                            _specialties.remove(e.key);
-                          }
+                          _professionalType = v ?? 'coach';
                         });
                       },
-                    );
-                  }).toList(),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: _regController,
+                      decoration: InputDecoration(
+                        labelText: '$_regLabel (obrigatório)',
+                        border: const OutlineInputBorder(),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: _phoneController,
+                      decoration: const InputDecoration(
+                        labelText: 'Celular (obrigatório)',
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: _zipController,
+                      decoration: const InputDecoration(
+                        labelText: 'CEP (obrigatório)',
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    const Text(
+                      'Especialidades (selecione ao menos 1):',
+                      style: TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 10,
+                      runSpacing: 10,
+                      children: specialtyLabels.entries.map((e) {
+                        final selected = _specialties.contains(e.key);
+                        return FilterChip(
+                          selected: selected,
+                          label: Text(e.value),
+                          onSelected: (v) {
+                            setState(() {
+                              if (v) {
+                                _specialties.add(e.key);
+                              } else {
+                                _specialties.remove(e.key);
+                              }
+                            });
+                          },
+                        );
+                      }).toList(),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: _bioController,
+                      maxLines: 4,
+                      decoration: const InputDecoration(
+                        labelText: 'Bio (opcional)',
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                    const SizedBox(height: 18),
+                    const Divider(),
+                    const SizedBox(height: 12),
+                    const Text(
+                      'Documentos obrigatórios para aprovação automática:',
+                      style: TextStyle(fontWeight: FontWeight.w700),
+                    ),
+                    const SizedBox(height: 12),
+                    _docStatusTile(
+                      title: 'RG/CNH',
+                      type: 'identity',
+                    ),
+                    const SizedBox(height: 10),
+                    FilledButton(
+                      onPressed: _uploading
+                          ? null
+                          : () => _uploadDoc('identity', 'RG/CNH'),
+                      child: const Text('Enviar RG/CNH'),
+                    ),
+                    const SizedBox(height: 14),
+                    _docStatusTile(
+                      title: 'Documento do conselho',
+                      type: 'council',
+                    ),
+                    const SizedBox(height: 10),
+                    FilledButton(
+                      onPressed: _uploading
+                          ? null
+                          : () => _uploadDoc('council', 'Documento do Conselho'),
+                      child: const Text('Enviar documento do Conselho'),
+                    ),
+                    const SizedBox(height: 14),
+                    _docStatusTile(
+                      title: 'Print consulta pública',
+                      type: 'lookup_print',
+                    ),
+                    const SizedBox(height: 10),
+                    FilledButton(
+                      onPressed: _uploading
+                          ? null
+                          : () => _uploadDoc(
+                                'lookup_print',
+                                'Print consulta pública',
+                              ),
+                      child: const Text('Enviar print da consulta pública'),
+                    ),
+                    const SizedBox(height: 18),
+                    FilledButton(
+                      onPressed: _saving ? null : _save,
+                      child: Text(
+                        _saving ? 'Salvando...' : 'Salvar e continuar',
+                      ),
+                    ),
+                    if (_msg != null) ...[
+                      const SizedBox(height: 12),
+                      Text(
+                        _msg!,
+                        textAlign: TextAlign.center,
+                      ),
+                    ],
+                  ],
                 ),
-
-                const SizedBox(height: 12),
-                TextField(
-                  controller: _bioController,
-                  maxLines: 4,
-                  decoration: const InputDecoration(
-                    labelText: 'Bio (opcional)',
-                    border: OutlineInputBorder(),
-                  ),
-                ),
-
-                const SizedBox(height: 18),
-                const Divider(),
-                const SizedBox(height: 12),
-                const Text(
-                  'Documentos obrigatórios para aprovação automática:',
-                ),
-                const SizedBox(height: 12),
-
-                _docStatusTile(
-                  title: 'RG/CNH',
-                  type: 'identity',
-                ),
-                const SizedBox(height: 10),
-                FilledButton(
-                  onPressed: _uploading
-                      ? null
-                      : () => _uploadDoc('identity', 'RG/CNH'),
-                  child: const Text('Enviar RG/CNH (foto ou PDF)'),
-                ),
-
-                const SizedBox(height: 14),
-                _docStatusTile(
-                  title: 'Documento do conselho',
-                  type: 'council',
-                ),
-                const SizedBox(height: 10),
-                FilledButton(
-                  onPressed: _uploading
-                      ? null
-                      : () => _uploadDoc('council', 'Documento do Conselho'),
-                  child: const Text('Enviar documento do Conselho (CREF/CRN)'),
-                ),
-
-                const SizedBox(height: 14),
-                _docStatusTile(
-                  title: 'Print consulta pública',
-                  type: 'lookup_print',
-                ),
-                const SizedBox(height: 10),
-                FilledButton(
-                  onPressed: _uploading
-                      ? null
-                      : () => _uploadDoc('lookup_print', 'Print consulta pública'),
-                  child: const Text(
-                    'Enviar print da consulta pública (ATIVO/BACHAREL)',
-                  ),
-                ),
-
-                const SizedBox(height: 18),
-                FilledButton(
-                  onPressed: _saving ? null : _save,
-                  child: Text(
-                    _saving ? 'Salvando...' : 'Salvar e continuar',
-                  ),
-                ),
-
-                if (_msg != null) ...[
-                  const SizedBox(height: 12),
-                  Text(_msg!, textAlign: TextAlign.center),
-                ],
-              ],
-            ),
+              ),
+            ],
           ),
         ),
       ),
