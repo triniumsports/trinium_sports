@@ -49,7 +49,6 @@ class _AthleteSearchProfessionalsScreenState
             'professional_type, '
             'specialties, '
             'cref_number, '
-            'crn_number, '
             'license_number, '
             'social_instagram, '
             'social_linkedin, '
@@ -194,22 +193,18 @@ class _AthleteSearchProfessionalsScreenState
 
   String _regNumberRaw(Map<String, dynamic> r) {
     final cref = (r['cref_number'] ?? '').toString().trim();
-    final crn = (r['crn_number'] ?? '').toString().trim();
     final license = (r['license_number'] ?? '').toString().trim();
 
     if (cref.isNotEmpty) return cref;
-    if (crn.isNotEmpty) return crn;
     if (license.isNotEmpty) return license;
     return '';
   }
 
   String _regNumberLabel(Map<String, dynamic> r) {
     final cref = (r['cref_number'] ?? '').toString().trim();
-    final crn = (r['crn_number'] ?? '').toString().trim();
     final license = (r['license_number'] ?? '').toString().trim();
 
     if (cref.isNotEmpty) return 'CREF: $cref';
-    if (crn.isNotEmpty) return 'CRN: $crn';
     if (license.isNotEmpty) return 'Registro: $license';
     return 'Registro não informado';
   }
