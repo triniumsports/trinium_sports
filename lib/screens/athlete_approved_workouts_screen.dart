@@ -38,7 +38,7 @@ class _AthleteApprovedWorkoutsScreenState
           .from('prescribed_workouts')
           .select('*')
           .eq('athlete_id', user.id)
-          .eq('validation_status', 'approved')
+          .eq('validation_status', 'published')
           .order('scheduled_date', ascending: true);
 
       _workouts = (workouts as List).cast<Map<String, dynamic>>();
@@ -64,7 +64,7 @@ class _AthleteApprovedWorkoutsScreenState
 
       _stepsByWorkout = map;
     } catch (e) {
-      _msg = 'Erro ao carregar treinos aprovados: $e';
+      _msg = 'Erro ao carregar treinos publicados: $e';
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -78,7 +78,7 @@ class _AthleteApprovedWorkoutsScreenState
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Treinos aprovados'),
+        title: const Text('Treinos publicados'),
         actions: [
           IconButton(
             onPressed: _load,
@@ -101,7 +101,7 @@ class _AthleteApprovedWorkoutsScreenState
           Expanded(
             child: _workouts.isEmpty
                 ? const Center(
-                    child: Text('Nenhum treino aprovado encontrado.'),
+                    child: Text('Nenhum treino publicado encontrado.'),
                   )
                 : ListView.builder(
                     padding: const EdgeInsets.all(16),
@@ -120,7 +120,8 @@ class _AthleteApprovedWorkoutsScreenState
                         child: ExpansionTile(
                           title: Text(title),
                           subtitle: Text(date),
-                          childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                          childrenPadding:
+                              const EdgeInsets.fromLTRB(16, 0, 16, 16),
                           children: [
                             if (description.isNotEmpty) ...[
                               Align(
@@ -155,13 +156,17 @@ class _AthleteApprovedWorkoutsScreenState
                                     color: const Color(0xFFF7F7F9),
                                   ),
                                   child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
                                     children: [
                                       Text(
                                         'Step $order ${stepType.isNotEmpty ? "- $stepType" : ""}',
-                                        style: const TextStyle(fontWeight: FontWeight.w700),
+                                        style: const TextStyle(
+                                          fontWeight: FontWeight.w700,
+                                        ),
                                       ),
-                                      if (duration.isNotEmpty) Text('Valor: $duration'),
+                                      if (duration.isNotEmpty)
+                                        Text('Valor: $duration'),
                                       if (zone.isNotEmpty) Text('Zona: $zone'),
                                       if (notes.isNotEmpty) Text('Obs: $notes'),
                                     ],

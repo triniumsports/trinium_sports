@@ -44,7 +44,7 @@ class _CoachAthleteWorkoutsReviewScreenState
     });
 
     try {
-      dynamic query = _client
+      var query = _client
           .from('prescribed_workouts')
           .select('*')
           .eq('athlete_id', widget.athleteId)
@@ -74,39 +74,75 @@ class _CoachAthleteWorkoutsReviewScreenState
       ),
     );
 
-    if (changed == true) {
-      await _load();
-    } else {
-      await _load();
+    await _load();
+    if (changed == true && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Treino atualizado ✅')),
+      );
     }
   }
 
-  Future<void> _approveDirect(int workoutId) async {
+  Future<void> _publishDirect(int workoutId) async {
     final user = _client.auth.currentUser;
     if (user == null) return;
 
     try {
       await _client.from('prescribed_workouts').update({
-        'validation_status': 'approved',
+        'validation_status': 'published',
         'approved_at': DateTime.now().toIso8601String(),
         'approved_by_coach_id': user.id,
       }).eq('id', workoutId);
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Treino aprovado ✅')),
+        const SnackBar(content: Text('Treino publicado para o atleta ✅')),
       );
       await _load();
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Erro ao aprovar: $e')),
+        SnackBar(content: Text('Erro ao publicar: $e')),
       );
     }
   }
 
+  Widget _statusChip(String status) {
+    Color color;
+    switch (status) {
+      case 'published':
+        color = Colors.green;
+        break;
+      case 'pending':
+        color = Colors.orange;
+        break;
+      case 'rejected':
+        color = Colors.red;
+        break;
+      default:
+        color = Colors.blueGrey;
+    }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(20),
+        color: color.withValues(alpha: 0.12),
+      ),
+      child: Text(
+        status,
+        style: TextStyle(
+          color: color,
+          fontWeight: FontWeight.w700,
+          fontSize: 12,
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    final total = _workouts.length;
+
     return Scaffold(
       appBar: AppBar(
         title: Text('Treinos de ${widget.athleteName}'),
@@ -121,21 +157,33 @@ class _CoachAthleteWorkoutsReviewScreenState
         children: [
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-            child: DropdownButtonFormField<String>(
-              value: _statusFilter,
-              decoration: const InputDecoration(
-                labelText: 'Filtro',
-                border: OutlineInputBorder(),
-              ),
-              items: const [
-                DropdownMenuItem(value: 'pending', child: Text('Pendentes')),
-                DropdownMenuItem(value: 'approved', child: Text('Aprovados')),
-                DropdownMenuItem(value: 'all', child: Text('Todos')),
+            child: Column(
+              children: [
+                DropdownButtonFormField<String>(
+                  value: _statusFilter,
+                  decoration: const InputDecoration(
+                    labelText: 'Filtro',
+                    border: OutlineInputBorder(),
+                  ),
+                  items: const [
+                    DropdownMenuItem(value: 'pending', child: Text('Pendentes')),
+                    DropdownMenuItem(value: 'published', child: Text('Publicados')),
+                    DropdownMenuItem(value: 'all', child: Text('Todos')),
+                  ],
+                  onChanged: (value) async {
+                    setState(() => _statusFilter = value ?? 'pending');
+                    await _load();
+                  },
+                ),
+                const SizedBox(height: 10),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    '$total treino(s) encontrado(s)',
+                    style: const TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                ),
               ],
-              onChanged: (value) async {
-                setState(() => _statusFilter = value ?? 'pending');
-                await _load();
-              },
             ),
           ),
           if (_loading) const LinearProgressIndicator(),
@@ -159,15 +207,13 @@ class _CoachAthleteWorkoutsReviewScreenState
                     itemBuilder: (context, index) {
                       final w = _workouts[index];
                       final workoutId = w['id'] as int;
-                      final title =
-                          (w['title'] ?? 'Treino').toString();
-                      final date =
-                          _dateText((w['scheduled_date'] ?? '').toString());
+                      final title = (w['title'] ?? 'Treino').toString();
+                      final date = _dateText((w['scheduled_date'] ?? '').toString());
                       final validationStatus =
                           (w['validation_status'] ?? '').toString();
                       final timeSlot = (w['time_slot'] ?? '').toString();
-                      final plannedRpe =
-                          (w['planned_rpe'] ?? '').toString();
+                      final plannedRpe = (w['planned_rpe'] ?? '').toString();
+                      final description = (w['description'] ?? '').toString();
 
                       return Card(
                         child: Padding(
@@ -175,18 +221,29 @@ class _CoachAthleteWorkoutsReviewScreenState
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text(
-                                title,
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.w700,
-                                  fontSize: 16,
-                                ),
+                              Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Expanded(
+                                    child: Text(
+                                      title,
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.w700,
+                                        fontSize: 16,
+                                      ),
+                                    ),
+                                  ),
+                                  _statusChip(validationStatus),
+                                ],
                               ),
                               const SizedBox(height: 6),
                               Text('Data: $date'),
                               if (timeSlot.isNotEmpty) Text('Período: $timeSlot'),
                               if (plannedRpe.isNotEmpty) Text('RPE: $plannedRpe'),
-                              Text('Status: $validationStatus'),
+                              if (description.isNotEmpty) ...[
+                                const SizedBox(height: 8),
+                                Text(description),
+                              ],
                               const SizedBox(height: 12),
                               Wrap(
                                 spacing: 8,
@@ -196,10 +253,10 @@ class _CoachAthleteWorkoutsReviewScreenState
                                     onPressed: () => _openWorkout(workoutId),
                                     child: const Text('Revisar / editar'),
                                   ),
-                                  if (validationStatus != 'approved')
+                                  if (validationStatus != 'published')
                                     FilledButton(
-                                      onPressed: () => _approveDirect(workoutId),
-                                      child: const Text('Aprovar'),
+                                      onPressed: () => _publishDirect(workoutId),
+                                      child: const Text('Publicar para atleta'),
                                     ),
                                 ],
                               ),

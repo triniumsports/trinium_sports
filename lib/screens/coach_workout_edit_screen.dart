@@ -120,6 +120,7 @@ class _CoachWorkoutEditScreenState extends State<CoachWorkoutEditScreen> {
             : _descriptionController.text.trim(),
         'planned_duration_sec': _toNumOrNull(_durationController.text),
         'planned_rpe': _toNumOrNull(_rpeController.text),
+        'validation_status': 'pending',
       }).eq('id', widget.workoutId);
 
       for (final s in _steps) {
@@ -144,7 +145,7 @@ class _CoachWorkoutEditScreenState extends State<CoachWorkoutEditScreen> {
     }
   }
 
-  Future<void> _approveWorkout() async {
+  Future<void> _publishWorkout() async {
     final user = _client.auth.currentUser;
     if (user == null) return;
 
@@ -154,21 +155,38 @@ class _CoachWorkoutEditScreenState extends State<CoachWorkoutEditScreen> {
     });
 
     try {
-      await _saveDraft();
+      await _client.from('prescribed_workouts').update({
+        'title': _titleController.text.trim(),
+        'description': _descriptionController.text.trim().isEmpty
+            ? null
+            : _descriptionController.text.trim(),
+        'planned_duration_sec': _toNumOrNull(_durationController.text),
+        'planned_rpe': _toNumOrNull(_rpeController.text),
+      }).eq('id', widget.workoutId);
+
+      for (final s in _steps) {
+        final id = (s['id'] ?? '').toString();
+        await _client.from('prescribed_workout_steps').update({
+          'duration_value': _toNumOrNull(_stepDurationControllers[id]?.text ?? ''),
+          'notes': (_stepNotesControllers[id]?.text ?? '').trim().isEmpty
+              ? null
+              : (_stepNotesControllers[id]?.text ?? '').trim(),
+        }).eq('id', s['id']);
+      }
 
       await _client.from('prescribed_workouts').update({
-        'validation_status': 'approved',
+        'validation_status': 'published',
         'approved_at': DateTime.now().toIso8601String(),
         'approved_by_coach_id': user.id,
       }).eq('id', widget.workoutId);
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Treino aprovado ✅')),
+        const SnackBar(content: Text('Treino publicado ✅')),
       );
       Navigator.of(context).pop(true);
     } catch (e) {
-      setState(() => _msg = 'Erro ao aprovar treino: $e');
+      setState(() => _msg = 'Erro ao publicar treino: $e');
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -314,8 +332,8 @@ class _CoachWorkoutEditScreenState extends State<CoachWorkoutEditScreen> {
               const SizedBox(width: 12),
               Expanded(
                 child: FilledButton(
-                  onPressed: _saving ? null : _approveWorkout,
-                  child: const Text('Aprovar treino'),
+                  onPressed: _saving ? null : _publishWorkout,
+                  child: const Text('Publicar para atleta'),
                 ),
               ),
             ],
