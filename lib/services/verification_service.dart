@@ -82,7 +82,9 @@ class VerificationService {
 
     await _client.from('coaches').update({
       'verification_documents': docs,
-      'verification_status': hasAll ? 'approved' : 'pending',
+      'verification_status': hasAll ? 'verified' : 'pending',
+      'verification_submitted_at':
+          hasAll ? DateTime.now().toIso8601String() : null,
     }).eq('id', user.id);
   }
 

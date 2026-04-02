@@ -384,7 +384,7 @@ class _ProfessionalProfileFormScreenState
         'license_state': _licenseStateController.text.trim().isEmpty
             ? null
             : _licenseStateController.text.trim(),
-        'verification_status': _hasAllDocs ? 'approved' : 'pending',
+        'verification_status': _hasAllDocs ? 'verified' : 'pending',
         'verification_submitted_at':
             _hasAllDocs ? DateTime.now().toIso8601String() : null,
         'updated_at': DateTime.now().toIso8601String(),
@@ -497,12 +497,12 @@ class _ProfessionalProfileFormScreenState
                         padding: const EdgeInsets.all(12),
                         decoration: BoxDecoration(
                           borderRadius: BorderRadius.circular(12),
-                          color: _verificationStatus == 'approved'
+                          color: _verificationStatus == 'verified'
                               ? const Color(0xFFEAF8EE)
                               : const Color(0xFFFFF4E5),
                         ),
                         child: Text(
-                          _verificationStatus == 'approved'
+                          _verificationStatus == 'verified'
                               ? 'Status atual: aprovado automaticamente ✅'
                               : 'Status atual: pendente. Envie os 3 documentos para aprovação automática.',
                           textAlign: TextAlign.center,
