@@ -2,14 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../services/auth_service.dart';
-import '../services/verification_service.dart';
-import 'auth_gate.dart';
 import 'admin_approvals_screen.dart';
-import 'professional_profile_form_screen.dart';
-import 'athlete_search_professionals_screen.dart';
-import 'coach_requests_screen.dart';
-import 'athlete_onboarding_screen.dart';
 import 'athlete_profile_form_screen.dart';
+import 'athlete_search_professionals_screen.dart';
+import 'auth_gate.dart';
+import 'coach_requests_screen.dart';
+import 'professional_profile_form_screen.dart';
 
 class HomeRouterScreen extends StatefulWidget {
   const HomeRouterScreen({super.key});
@@ -20,6 +18,7 @@ class HomeRouterScreen extends StatefulWidget {
 
 class _HomeRouterScreenState extends State<HomeRouterScreen> {
   final _authService = AuthService();
+
   bool _loading = true;
   String? _error;
   Widget? _resolved;
@@ -33,28 +32,29 @@ class _HomeRouterScreenState extends State<HomeRouterScreen> {
   Future<void> _load() async {
     try {
       final profile = await _authService.getMyProfile();
-      if (profile == null) throw Exception('Perfil não encontrado.');
+      if (profile == null) {
+        throw Exception('Perfil não encontrado.');
+      }
 
       final role = (profile['user_role'] ?? '').toString().trim().toLowerCase();
       final fullName = (profile['full_name'] ?? '').toString();
-
-      if (role.isEmpty) {
-        throw Exception('user_role inválido: (vazio)');
-      }
 
       if (role == 'admin') {
         _resolved = const AdminApprovalsScreen();
       } else if (role == 'athlete') {
         final user = Supabase.instance.client.auth.currentUser;
-        if (user == null) throw Exception('Usuário não autenticado.');
+        if (user == null) {
+          throw Exception('Usuário não autenticado.');
+        }
 
         final athlete = await Supabase.instance.client
             .from('athletes')
-            .select('birth_date,gender,height_cm,weight_kg,resting_hr,max_hr,experience_level')
+            .select(
+              'birth_date,gender,height_cm,weight_kg,resting_hr,max_hr,experience_level',
+            )
             .eq('id', user.id)
             .maybeSingle();
 
-        // Se não existe linha ainda, força onboarding
         if (athlete == null) {
           _resolved = const AthleteProfileFormScreen();
         } else {
@@ -67,8 +67,7 @@ class _HomeRouterScreenState extends State<HomeRouterScreen> {
           final rhr = athlete['resting_hr'];
           final mhr = athlete['max_hr'];
 
-          final isOk =
-              bd.isNotEmpty &&
+          final isComplete = bd.isNotEmpty &&
               g.isNotEmpty &&
               exp.isNotEmpty &&
               h != null &&
@@ -80,42 +79,45 @@ class _HomeRouterScreenState extends State<HomeRouterScreen> {
               (rhr is num && rhr > 0) &&
               (mhr is num && mhr > 0);
 
-          if (!isOk) {
-            _resolved = const AthleteProfileFormScreen();
-          } else {
-            _resolved = AthleteHomeScreen(fullName: fullName);
-          }
+          _resolved =
+              isComplete ? AthleteHomeScreen(fullName: fullName) : const AthleteProfileFormScreen();
         }
-      } else if (role == 'coach') {  } else if (role == 'coach') {
+      } else if (role == 'coach') {
         final user = Supabase.instance.client.auth.currentUser;
-        if (user == null) throw Exception('Usuário não autenticado.');
+        if (user == null) {
+          throw Exception('Usuário não autenticado.');
+        }
 
         final coach = await Supabase.instance.client
             .from('coaches')
             .select(
-                'verification_status, professional_type, cref_number, phone_mobile, address_zip_code, specialties')
+              'professional_type,cref_number,license_number,phone_mobile,address_zip_code,specialties,verification_status',
+            )
             .eq('id', user.id)
             .maybeSingle();
 
-        final status = (coach?['verification_status'] ?? 'pending').toString();
-        final profType = (coach?['professional_type'] ?? '').toString().trim();
-        final reg = (coach?['cref_number'] ?? '').toString().trim();
-        final phone = (coach?['phone_mobile'] ?? '').toString().trim();
-        final zip = (coach?['address_zip_code'] ?? '').toString().trim();
-        final specs = coach?['specialties'];
-        final specsCount = (specs is List) ? specs.length : 0;
-
-        final isComplete = profType.isNotEmpty &&
-            reg.isNotEmpty &&
-            phone.isNotEmpty &&
-            zip.isNotEmpty &&
-            specsCount > 0;
-
-        if (!isComplete) {
+        if (coach == null) {
           _resolved = const ProfessionalProfileFormScreen();
         } else {
-          // Novo modelo: sem trava de aprovação (docs são para auditoria).
-          _resolved = CoachHomeScreen(fullName: fullName);
+          final professionalType =
+              (coach['professional_type'] ?? '').toString().trim();
+          final cref = (coach['cref_number'] ?? '').toString().trim();
+          final license = (coach['license_number'] ?? '').toString().trim();
+          final phone = (coach['phone_mobile'] ?? '').toString().trim();
+          final zip = (coach['address_zip_code'] ?? '').toString().trim();
+          final specs = coach['specialties'];
+          final specsCount = specs is List ? specs.length : 0;
+
+          final hasRegistration = cref.isNotEmpty || license.isNotEmpty;
+
+          final isComplete = professionalType.isNotEmpty &&
+              hasRegistration &&
+              phone.isNotEmpty &&
+              zip.isNotEmpty &&
+              specsCount > 0;
+
+          _resolved =
+              isComplete ? CoachHomeScreen(fullName: fullName) : const ProfessionalProfileFormScreen();
         }
       } else {
         throw Exception('user_role inválido: $role');
@@ -123,14 +125,18 @@ class _HomeRouterScreenState extends State<HomeRouterScreen> {
     } catch (e) {
       _error = e.toString();
     } finally {
-      if (mounted) setState(() => _loading = false);
+      if (mounted) {
+        setState(() => _loading = false);
+      }
     }
   }
 
   @override
   Widget build(BuildContext context) {
     if (_loading) {
-      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
+      );
     }
 
     if (_error != null) {
@@ -150,13 +156,13 @@ class _HomeRouterScreenState extends State<HomeRouterScreen> {
 class BaseHomeScaffold extends StatelessWidget {
   final String title;
   final String message;
-  final Widget? extra;
+  final List<Widget> actions;
 
   const BaseHomeScaffold({
     super.key,
     required this.title,
     required this.message,
-    this.extra,
+    required this.actions,
   });
 
   Future<void> _logout(BuildContext context) async {
@@ -178,21 +184,27 @@ class BaseHomeScaffold extends StatelessWidget {
           TextButton(
             onPressed: () => _logout(context),
             child: const Text('Sair'),
-          )
+          ),
         ],
       ),
       body: Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-Text(message, textAlign: TextAlign.center),
-              if (extra != null) ...[
-                const SizedBox(height: 16),
-                extra!,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 760),
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text(message, textAlign: TextAlign.center),
+                const SizedBox(height: 20),
+                Wrap(
+                  spacing: 12,
+                  runSpacing: 12,
+                  alignment: WrapAlignment.center,
+                  children: actions,
+                ),
               ],
-            ],
+            ),
           ),
         ),
       ),
@@ -210,14 +222,18 @@ class AthleteHomeScreen extends StatelessWidget {
     return BaseHomeScaffold(
       title: 'Home do Atleta',
       message: 'Bem-vindo, $fullName\n\nSeu perfil de atleta está ativo.',
-      extra: FilledButton(
-        onPressed: () {
-          Navigator.of(context).push(
-            MaterialPageRoute(builder: (_) => const AthleteSearchProfessionalsScreen()),
-          );
-        },
-        child: const Text('Buscar profissionais'),
-      ),
+      actions: [
+        FilledButton(
+          onPressed: () {
+            Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => const AthleteSearchProfessionalsScreen(),
+              ),
+            );
+          },
+          child: const Text('Buscar profissionais'),
+        ),
+      ],
     );
   }
 }
@@ -231,87 +247,19 @@ class CoachHomeScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return BaseHomeScaffold(
       title: 'Home do Profissional',
-      message: 'Bem-vindo, $fullName\n\nStatus: VERIFIED ✅',
-    );
-  }
-}
-
-class CoachPendingScreen extends StatefulWidget {
-  final String fullName;
-  final String status;
-
-  const CoachPendingScreen({super.key, required this.fullName, required this.status});
-
-  @override
-  State<CoachPendingScreen> createState() => _CoachPendingScreenState();
-}
-
-class _CoachPendingScreenState extends State<CoachPendingScreen> {
-  bool _uploading = false;
-  String? _msg;
-
-  Future<void> _upload(String type, String label) async {
-    setState(() {
-      _uploading = true;
-      _msg = null;
-    });
-
-    try {
-      await VerificationService().pickAndUpload(docType: type);
-      setState(() => _msg = '$label enviado ✅');
-    } catch (e) {
-      setState(() => _msg = 'Erro ($label): $e');
-    } finally {
-      setState(() => _uploading = false);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return BaseHomeScaffold(
-      title: 'Aguardando Aprovação',
-      message:
-          'Olá, ${widget.fullName}\n\nStatus do cadastro: ${widget.status}\n\n'
-          'Envie os 3 itens para auditoria/validação:\n'
-          '1) RG/CNH\n2) Documento do Conselho\n3) Print da consulta pública',
-      extra: Column(
-        children: [
-          FilledButton(
-            onPressed: _uploading ? null : () => _upload('identity', 'RG/CNH'),
-            child: Text(_uploading ? 'Enviando...' : 'Enviar RG/CNH (foto ou PDF)'),
-          ),
-          const SizedBox(height: 10),
-          FilledButton(
-            onPressed: _uploading ? null : () => _upload('council', 'Conselho'),
-            child: Text(_uploading ? 'Enviando...' : 'Enviar documento do Conselho (CREF/CRN)'),
-          ),
-          const SizedBox(height: 10),
-          FilledButton(
-            onPressed: _uploading ? null : () => _upload('lookup_print', 'Print consulta pública'),
-            child: Text(_uploading
-                ? 'Enviando...'
-                : 'Enviar print da consulta pública (ATIVO/BACHAREL)'),
-          ),
-          if (_msg != null) ...[
-            const SizedBox(height: 12),
-            Text(_msg!, textAlign: TextAlign.center),
-          ],
-        ],
-      ),
-    );
-  }
-}
-
-class CoachRejectedScreen extends StatelessWidget {
-  final String fullName;
-
-  const CoachRejectedScreen({super.key, required this.fullName});
-
-  @override
-  Widget build(BuildContext context) {
-    return BaseHomeScaffold(
-      title: 'Cadastro Rejeitado',
-      message: 'Olá, $fullName\n\nSeu cadastro foi rejeitado.\nEntre em contato com o suporte.',
+      message: 'Bem-vindo, $fullName\n\nSeu perfil profissional está ativo.',
+      actions: [
+        FilledButton(
+          onPressed: () {
+            Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => const CoachRequestsScreen(),
+              ),
+            );
+          },
+          child: const Text('Solicitações de atletas'),
+        ),
+      ],
     );
   }
 }
