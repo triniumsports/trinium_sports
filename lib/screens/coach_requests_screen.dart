@@ -8,19 +8,30 @@ class CoachRequestsScreen extends StatefulWidget {
   State<CoachRequestsScreen> createState() => _CoachRequestsScreenState();
 }
 
-class _CoachRequestsScreenState extends State<CoachRequestsScreen> {
+class _CoachRequestsScreenState extends State<CoachRequestsScreen>
+    with SingleTickerProviderStateMixin {
   final _client = Supabase.instance.client;
+
+  late final TabController _tabController;
 
   bool _loading = true;
   String? _msg;
 
-  List<Map<String, dynamic>> _rels = [];
+  List<Map<String, dynamic>> _pendingRelations = [];
+  List<Map<String, dynamic>> _activeRelations = [];
   Map<String, Map<String, dynamic>> _athleteProfilesById = {};
 
   @override
   void initState() {
     super.initState();
+    _tabController = TabController(length: 2, vsync: this);
     _load();
+  }
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    super.dispose();
   }
 
   Future<void> _load() async {
@@ -33,19 +44,31 @@ class _CoachRequestsScreenState extends State<CoachRequestsScreen> {
     });
 
     try {
-      final rels = await _client
+      final pending = await _client
           .from('coach_athlete_relation')
           .select('id, athlete_id, status, created_at')
           .eq('coach_id', user.id)
           .eq('status', 'pending')
           .order('created_at', ascending: true);
 
-      _rels = (rels as List).cast<Map<String, dynamic>>();
+      final active = await _client
+          .from('coach_athlete_relation')
+          .select('id, athlete_id, status, created_at')
+          .eq('coach_id', user.id)
+          .eq('status', 'active')
+          .order('created_at', ascending: false);
 
-      final athleteIds = _rels
-          .map((r) => (r['athlete_id'] ?? '').toString())
-          .where((x) => x.isNotEmpty)
-          .toList();
+      _pendingRelations = (pending as List).cast<Map<String, dynamic>>();
+      _activeRelations = (active as List).cast<Map<String, dynamic>>();
+
+      final athleteIds = <String>{
+        ..._pendingRelations
+            .map((r) => (r['athlete_id'] ?? '').toString())
+            .where((x) => x.isNotEmpty),
+        ..._activeRelations
+            .map((r) => (r['athlete_id'] ?? '').toString())
+            .where((x) => x.isNotEmpty),
+      }.toList();
 
       if (athleteIds.isNotEmpty) {
         final inValues = '(${athleteIds.map((e) => '"$e"').join(',')})';
@@ -66,9 +89,7 @@ class _CoachRequestsScreenState extends State<CoachRequestsScreen> {
     } catch (e) {
       _msg = 'Erro ao carregar solicitações: $e';
     } finally {
-      if (mounted) {
-        setState(() => _loading = false);
-      }
+      if (mounted) setState(() => _loading = false);
     }
   }
 
@@ -104,7 +125,10 @@ class _CoachRequestsScreenState extends State<CoachRequestsScreen> {
     if (user == null) return;
 
     try {
-      setState(() => _loading = true);
+      setState(() {
+        _loading = true;
+        _msg = null;
+      });
 
       await _client
           .from('coach_athlete_relation')
@@ -113,13 +137,17 @@ class _CoachRequestsScreenState extends State<CoachRequestsScreen> {
           .eq('coach_id', user.id);
 
       final result = await _client.rpc(
-        'generate_plan_for_relation',
-        params: {'p_athlete_id': athleteId},
+        'path_b_generate_plan',
+        params: {
+          'v_athlete': athleteId,
+          'v_coach': user.id,
+          'v_target_race_id': null,
+        },
       );
 
       if (!mounted) return;
 
-      final map = (result is Map<String, dynamic>)
+      final map = result is Map<String, dynamic>
           ? result
           : <String, dynamic>{'success': true, 'message': result.toString()};
 
@@ -139,11 +167,163 @@ class _CoachRequestsScreenState extends State<CoachRequestsScreen> {
       await _load();
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Erro ao aceitar/gerar plano: $e')),
-      );
       setState(() => _loading = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Erro ao aceitar e gerar plano: $e'),
+          duration: const Duration(seconds: 8),
+        ),
+      );
     }
+  }
+
+  Future<void> _generateForActiveAthlete(String athleteId) async {
+    final user = _client.auth.currentUser;
+    if (user == null) return;
+
+    try {
+      setState(() {
+        _loading = true;
+        _msg = null;
+      });
+
+      final result = await _client.rpc(
+        'path_b_generate_plan',
+        params: {
+          'v_athlete': athleteId,
+          'v_coach': user.id,
+          'v_target_race_id': null,
+        },
+      );
+
+      if (!mounted) return;
+
+      final map = result is Map<String, dynamic>
+          ? result
+          : <String, dynamic>{'success': true, 'message': result.toString()};
+
+      final success = map['success'] == true;
+      final message = (map['message'] ?? 'Operação concluída.').toString();
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            success
+                ? 'Plano gerado com sucesso ✅ $message'
+                : 'Não foi possível gerar o plano. $message',
+          ),
+        ),
+      );
+
+      await _load();
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _loading = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Erro ao gerar plano: $e'),
+          duration: const Duration(seconds: 8),
+        ),
+      );
+    }
+  }
+
+  Widget _buildRelationCard(
+    Map<String, dynamic> relation, {
+    required bool isPending,
+  }) {
+    final athleteId = (relation['athlete_id'] ?? '').toString();
+    final relationId = (relation['id'] ?? '').toString();
+    final prof = _athleteProfilesById[athleteId] ?? {};
+
+    final name = (prof['full_name'] ?? 'Atleta').toString();
+    final email = (prof['email'] ?? '').toString();
+    final avatar = (prof['avatar_url'] ?? '').toString();
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Row(
+          children: [
+            CircleAvatar(
+              backgroundImage: avatar.isNotEmpty ? NetworkImage(avatar) : null,
+              child: avatar.isEmpty ? const Icon(Icons.person) : null,
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    name,
+                    style: const TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                  if (email.isNotEmpty) ...[
+                    const SizedBox(height: 4),
+                    Text(email),
+                  ],
+                  const SizedBox(height: 12),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: isPending
+                        ? [
+                            FilledButton(
+                              onPressed: relationId.isEmpty
+                                  ? null
+                                  : () => _accept(relationId),
+                              child: const Text('Aceitar'),
+                            ),
+                            FilledButton.tonal(
+                              onPressed: relationId.isEmpty || athleteId.isEmpty
+                                  ? null
+                                  : () => _acceptAndGenerate(
+                                        relationId: relationId,
+                                        athleteId: athleteId,
+                                      ),
+                              child: const Text('Aceitar + gerar plano'),
+                            ),
+                          ]
+                        : [
+                            FilledButton(
+                              onPressed: athleteId.isEmpty
+                                  ? null
+                                  : () => _generateForActiveAthlete(athleteId),
+                              child: const Text('Gerar plano'),
+                            ),
+                          ],
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTabContent(List<Map<String, dynamic>> list, bool isPending) {
+    if (list.isEmpty) {
+      return Center(
+        child: Text(
+          isPending ? 'Nenhuma solicitação pendente.' : 'Nenhum atleta ativo.',
+        ),
+      );
+    }
+
+    return RefreshIndicator(
+      onRefresh: _load,
+      child: ListView.builder(
+        padding: const EdgeInsets.all(16),
+        itemCount: list.length,
+        itemBuilder: (context, index) {
+          return _buildRelationCard(
+            list[index],
+            isPending: isPending,
+          );
+        },
+      ),
+    );
   }
 
   @override
@@ -157,100 +337,36 @@ class _CoachRequestsScreenState extends State<CoachRequestsScreen> {
             icon: const Icon(Icons.refresh),
           ),
         ],
-      ),
-      body: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          children: [
-            if (_loading) const LinearProgressIndicator(),
-            if (_msg != null) ...[
-              const SizedBox(height: 12),
-              Text(_msg!, textAlign: TextAlign.center),
-            ],
-            const SizedBox(height: 8),
-            Expanded(
-              child: _rels.isEmpty
-                  ? const Center(
-                      child: Text('Nenhuma solicitação pendente.'),
-                    )
-                  : ListView.builder(
-                      itemCount: _rels.length,
-                      itemBuilder: (context, i) {
-                        final r = _rels[i];
-                        final relationId = (r['id'] ?? '').toString();
-                        final athleteId = (r['athlete_id'] ?? '').toString();
-                        final prof = _athleteProfilesById[athleteId] ?? {};
-
-                        final name = (prof['full_name'] ?? 'Atleta').toString();
-                        final email = (prof['email'] ?? '').toString();
-                        final avatar = (prof['avatar_url'] ?? '').toString();
-
-                        return Card(
-                          child: Padding(
-                            padding: const EdgeInsets.all(12),
-                            child: Row(
-                              children: [
-                                CircleAvatar(
-                                  backgroundImage: avatar.isNotEmpty
-                                      ? NetworkImage(avatar)
-                                      : null,
-                                  child: avatar.isEmpty
-                                      ? const Icon(Icons.person)
-                                      : null,
-                                ),
-                                const SizedBox(width: 12),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        name,
-                                        style: const TextStyle(
-                                          fontWeight: FontWeight.bold,
-                                        ),
-                                      ),
-                                      if (email.isNotEmpty) ...[
-                                        const SizedBox(height: 4),
-                                        Text(email),
-                                      ],
-                                      const SizedBox(height: 12),
-                                      Wrap(
-                                        spacing: 8,
-                                        runSpacing: 8,
-                                        children: [
-                                          FilledButton(
-                                            onPressed: relationId.isEmpty
-                                                ? null
-                                                : () => _accept(relationId),
-                                            child: const Text('Aceitar'),
-                                          ),
-                                          FilledButton.tonal(
-                                            onPressed: relationId.isEmpty ||
-                                                    athleteId.isEmpty
-                                                ? null
-                                                : () => _acceptAndGenerate(
-                                                      relationId: relationId,
-                                                      athleteId: athleteId,
-                                                    ),
-                                            child: const Text(
-                                              'Aceitar + gerar plano',
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        );
-                      },
-                    ),
-            ),
+        bottom: TabBar(
+          controller: _tabController,
+          tabs: const [
+            Tab(text: 'Pendentes'),
+            Tab(text: 'Ativos'),
           ],
         ),
+      ),
+      body: Column(
+        children: [
+          if (_loading) const LinearProgressIndicator(),
+          if (_msg != null)
+            Padding(
+              padding: const EdgeInsets.all(12),
+              child: Text(
+                _msg!,
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: Colors.red),
+              ),
+            ),
+          Expanded(
+            child: TabBarView(
+              controller: _tabController,
+              children: [
+                _buildTabContent(_pendingRelations, true),
+                _buildTabContent(_activeRelations, false),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
