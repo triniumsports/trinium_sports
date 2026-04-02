@@ -3,6 +3,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../services/auth_service.dart';
 import 'admin_approvals_screen.dart';
+import 'athlete_approved_workouts_screen.dart';
 import 'athlete_profile_form_screen.dart';
 import 'athlete_search_professionals_screen.dart';
 import 'auth_gate.dart';
@@ -232,6 +233,16 @@ class AthleteHomeScreen extends StatelessWidget {
             );
           },
           child: const Text('Buscar profissionais'),
+        ),
+        FilledButton.tonal(
+          onPressed: () {
+            Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => const AthleteApprovedWorkoutsScreen(),
+              ),
+            );
+          },
+          child: const Text('Treinos aprovados'),
         ),
       ],
     );

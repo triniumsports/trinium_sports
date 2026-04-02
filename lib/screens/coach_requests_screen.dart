@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import 'coach_athlete_workouts_review_screen.dart';
+
 class CoachRequestsScreen extends StatefulWidget {
   const CoachRequestsScreen({super.key});
 
@@ -228,6 +230,21 @@ class _CoachRequestsScreenState extends State<CoachRequestsScreen>
     }
   }
 
+  void _openWorkoutReview(String athleteId, String athleteName) {
+    Navigator.of(context)
+        .push(
+      MaterialPageRoute(
+        builder: (_) => CoachAthleteWorkoutsReviewScreen(
+          athleteId: athleteId,
+          athleteName: athleteName,
+        ),
+      ),
+    )
+        .then((_) async {
+      await _load();
+    });
+  }
+
   Widget _buildRelationCard(
     Map<String, dynamic> relation, {
     required bool isPending,
@@ -285,11 +302,17 @@ class _CoachRequestsScreenState extends State<CoachRequestsScreen>
                             ),
                           ]
                         : [
-                            FilledButton(
+                            FilledButton.tonal(
                               onPressed: athleteId.isEmpty
                                   ? null
                                   : () => _generateForActiveAthlete(athleteId),
                               child: const Text('Gerar plano'),
+                            ),
+                            FilledButton(
+                              onPressed: athleteId.isEmpty
+                                  ? null
+                                  : () => _openWorkoutReview(athleteId, name),
+                              child: const Text('Ver treinos'),
                             ),
                           ],
                   ),
