@@ -91,7 +91,7 @@ class _CoachRequestsScreenState extends State<CoachRequestsScreen>
         final races = await _client
             .from('target_races')
             .select(
-              'id, athlete_id, race_date, status, distance_meters, priority, race_name, event_name',
+              'id, athlete_id, race_date, status, distance_meters, priority, event_name',
             )
             .filter('athlete_id', 'in', inValues)
             .eq('status', 'planned')
@@ -121,7 +121,8 @@ class _CoachRequestsScreenState extends State<CoachRequestsScreen>
                 'total': 0,
               });
 
-          countMap[athleteId]!['total'] = (countMap[athleteId]!['total'] ?? 0) + 1;
+          countMap[athleteId]!['total'] =
+              (countMap[athleteId]!['total'] ?? 0) + 1;
 
           if (status == 'pending') {
             countMap[athleteId]!['pending'] =
@@ -318,7 +319,7 @@ class _CoachRequestsScreenState extends State<CoachRequestsScreen>
     final race = _mainRaceByAthleteId[athleteId];
     if (race == null) return 'Sem prova alvo planejada';
 
-    final name = (race['race_name'] ?? race['event_name'] ?? 'Prova alvo').toString();
+    final name = (race['event_name'] ?? 'Prova alvo').toString();
     final date = (race['race_date'] ?? '').toString();
     final distance = (race['distance_meters'] ?? '').toString();
     final priority = (race['priority'] ?? '').toString();
