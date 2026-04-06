@@ -55,6 +55,7 @@ class _AthleteSearchProfessionalsScreenState
             'verification_status, '
             'profiles(id, full_name, email, avatar_url, user_role)',
           )
+          .eq('verification_status', 'verified')
           .order('updated_at', ascending: false);
 
       _rows = (res as List).cast<Map<String, dynamic>>();
@@ -105,6 +106,27 @@ class _AthleteSearchProfessionalsScreenState
     if (user == null) return;
 
     try {
+      final existing = await _client
+          .from('coach_athlete_relation')
+          .select('id, status')
+          .eq('coach_id', coachId)
+          .eq('athlete_id', user.id)
+          .maybeSingle();
+
+      if (existing != null) {
+        final status = (existing['status'] ?? '').toString();
+        if (!mounted) return;
+
+        final msg = status == 'active'
+            ? 'Você já está vinculado a $professionalName ✅'
+            : 'Você já possui uma solicitação com $professionalName (status: $status).';
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(msg)),
+        );
+        return;
+      }
+
       await _client.from('coach_athlete_relation').insert({
         'coach_id': coachId,
         'athlete_id': user.id,
@@ -184,8 +206,6 @@ class _AthleteSearchProfessionalsScreenState
         return 'Treinador';
       case 'nutritionist':
         return 'Nutricionista';
-      case 'personal':
-        return 'Personal / Força';
       default:
         return value.isEmpty ? 'Profissional' : value;
     }
@@ -233,7 +253,6 @@ class _AthleteSearchProfessionalsScreenState
 
   Color _statusColor(String status) {
     switch (status.trim().toLowerCase()) {
-      case 'approved':
       case 'verified':
         return Colors.green;
       case 'pending':
@@ -297,7 +316,7 @@ class _AthleteSearchProfessionalsScreenState
                   ),
                   const SizedBox(height: 8),
                   const Text(
-                    'Encontre treinador, nutricionista ou profissional de apoio.\n'
+                    'Encontre treinador ou nutricionista.\n'
                     'O contato e a contratação acontecem fora do app. Depois, selecione o profissional aqui para liberar o vínculo esportivo no Trinium.',
                     textAlign: TextAlign.center,
                     style: TextStyle(
@@ -346,10 +365,6 @@ class _AthleteSearchProfessionalsScreenState
                             DropdownMenuItem(
                               value: 'nutritionist',
                               child: Text('Nutricionista'),
-                            ),
-                            DropdownMenuItem(
-                              value: 'personal',
-                              child: Text('Personal / Força'),
                             ),
                           ],
                           onChanged: (value) {

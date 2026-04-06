@@ -22,6 +22,8 @@ class _CoachRequestsScreenState extends State<CoachRequestsScreen>
   List<Map<String, dynamic>> _pendingRelations = [];
   List<Map<String, dynamic>> _activeRelations = [];
   Map<String, Map<String, dynamic>> _athleteProfilesById = {};
+  Map<String, Map<String, dynamic>> _mainRaceByAthleteId = {};
+  Map<String, Map<String, int>> _countsByAthleteId = {};
 
   @override
   void initState() {
@@ -80,13 +82,60 @@ class _CoachRequestsScreenState extends State<CoachRequestsScreen>
             .select('id, full_name, email, avatar_url')
             .filter('id', 'in', inValues);
 
-        final map = <String, Map<String, dynamic>>{};
+        final profileMap = <String, Map<String, dynamic>>{};
         for (final p in (profs as List).cast<Map<String, dynamic>>()) {
-          map[(p['id'] ?? '').toString()] = p;
+          profileMap[(p['id'] ?? '').toString()] = p;
         }
-        _athleteProfilesById = map;
+        _athleteProfilesById = profileMap;
+
+        final races = await _client
+            .from('target_races')
+            .select(
+              'id, athlete_id, race_date, status, distance_meters, priority, race_name, event_name',
+            )
+            .filter('athlete_id', 'in', inValues)
+            .eq('status', 'planned')
+            .order('race_date', ascending: true);
+
+        final raceMap = <String, Map<String, dynamic>>{};
+        for (final r in (races as List).cast<Map<String, dynamic>>()) {
+          final athleteId = (r['athlete_id'] ?? '').toString();
+          raceMap.putIfAbsent(athleteId, () => r);
+        }
+        _mainRaceByAthleteId = raceMap;
+
+        final workouts = await _client
+            .from('prescribed_workouts')
+            .select('athlete_id, validation_status')
+            .filter('athlete_id', 'in', inValues)
+            .eq('coach_id', user.id);
+
+        final countMap = <String, Map<String, int>>{};
+        for (final row in (workouts as List).cast<Map<String, dynamic>>()) {
+          final athleteId = (row['athlete_id'] ?? '').toString();
+          final status = (row['validation_status'] ?? '').toString();
+
+          countMap.putIfAbsent(athleteId, () => {
+                'pending': 0,
+                'published': 0,
+                'total': 0,
+              });
+
+          countMap[athleteId]!['total'] = (countMap[athleteId]!['total'] ?? 0) + 1;
+
+          if (status == 'pending') {
+            countMap[athleteId]!['pending'] =
+                (countMap[athleteId]!['pending'] ?? 0) + 1;
+          } else if (status == 'published') {
+            countMap[athleteId]!['published'] =
+                (countMap[athleteId]!['published'] ?? 0) + 1;
+          }
+        }
+        _countsByAthleteId = countMap;
       } else {
         _athleteProfilesById = {};
+        _mainRaceByAthleteId = {};
+        _countsByAthleteId = {};
       }
     } catch (e) {
       _msg = 'Erro ao carregar solicitações: $e';
@@ -245,6 +294,57 @@ class _CoachRequestsScreenState extends State<CoachRequestsScreen>
     });
   }
 
+  String _displayName(String athleteId) {
+    final prof = _athleteProfilesById[athleteId] ?? {};
+    final fullName = (prof['full_name'] ?? '').toString().trim();
+    if (fullName.isNotEmpty) return fullName;
+
+    final email = (prof['email'] ?? '').toString().trim();
+    if (email.isNotEmpty) return email;
+
+    if (athleteId.length >= 8) {
+      return 'Atleta ${athleteId.substring(0, 8)}';
+    }
+
+    return 'Atleta';
+  }
+
+  String _displayEmail(String athleteId) {
+    final prof = _athleteProfilesById[athleteId] ?? {};
+    return (prof['email'] ?? '').toString().trim();
+  }
+
+  String _raceSummary(String athleteId) {
+    final race = _mainRaceByAthleteId[athleteId];
+    if (race == null) return 'Sem prova alvo planejada';
+
+    final name = (race['race_name'] ?? race['event_name'] ?? 'Prova alvo').toString();
+    final date = (race['race_date'] ?? '').toString();
+    final distance = (race['distance_meters'] ?? '').toString();
+    final priority = (race['priority'] ?? '').toString();
+
+    final dateText = date.length >= 10 ? date.substring(0, 10) : date;
+    return '$name • $dateText • ${distance}m${priority.isNotEmpty ? ' • prioridade $priority' : ''}';
+  }
+
+  Widget _countChip(String label, int value, Color color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(20),
+        color: color.withValues(alpha: 0.12),
+      ),
+      child: Text(
+        '$label: $value',
+        style: TextStyle(
+          color: color,
+          fontSize: 12,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+    );
+  }
+
   Widget _buildRelationCard(
     Map<String, dynamic> relation, {
     required bool isPending,
@@ -252,15 +352,21 @@ class _CoachRequestsScreenState extends State<CoachRequestsScreen>
     final athleteId = (relation['athlete_id'] ?? '').toString();
     final relationId = (relation['id'] ?? '').toString();
     final prof = _athleteProfilesById[athleteId] ?? {};
-
-    final name = (prof['full_name'] ?? 'Atleta').toString();
-    final email = (prof['email'] ?? '').toString();
     final avatar = (prof['avatar_url'] ?? '').toString();
+
+    final name = _displayName(athleteId);
+    final email = _displayEmail(athleteId);
+    final counts = _countsByAthleteId[athleteId] ?? {
+      'pending': 0,
+      'published': 0,
+      'total': 0,
+    };
 
     return Card(
       child: Padding(
-        padding: const EdgeInsets.all(12),
+        padding: const EdgeInsets.all(14),
         child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             CircleAvatar(
               backgroundImage: avatar.isNotEmpty ? NetworkImage(avatar) : null,
@@ -273,11 +379,36 @@ class _CoachRequestsScreenState extends State<CoachRequestsScreen>
                 children: [
                   Text(
                     name,
-                    style: const TextStyle(fontWeight: FontWeight.bold),
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w700,
+                      fontSize: 16,
+                    ),
                   ),
                   if (email.isNotEmpty) ...[
                     const SizedBox(height: 4),
                     Text(email),
+                  ],
+                  const SizedBox(height: 4),
+                  Text(
+                    'ID: ${athleteId.length >= 8 ? athleteId.substring(0, 8) : athleteId}',
+                    style: const TextStyle(color: Colors.black54, fontSize: 12),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    _raceSummary(athleteId),
+                    style: const TextStyle(fontWeight: FontWeight.w500),
+                  ),
+                  if (!isPending) ...[
+                    const SizedBox(height: 10),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        _countChip('Pendentes', counts['pending'] ?? 0, Colors.orange),
+                        _countChip('Publicados', counts['published'] ?? 0, Colors.green),
+                        _countChip('Total', counts['total'] ?? 0, Colors.blueGrey),
+                      ],
+                    ),
                   ],
                   const SizedBox(height: 12),
                   Wrap(
