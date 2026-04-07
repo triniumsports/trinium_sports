@@ -69,7 +69,6 @@ class _CoachAthleteWorkoutsReviewScreenState
           .select('*')
           .eq('id', widget.athleteId)
           .maybeSingle();
-
       _athlete = athlete == null ? null : Map<String, dynamic>.from(athlete);
     } catch (_) {
       _athlete = null;
@@ -81,7 +80,6 @@ class _CoachAthleteWorkoutsReviewScreenState
           .select('*')
           .eq('athlete_id', widget.athleteId)
           .maybeSingle();
-
       _anamnesis =
           anamnesis == null ? null : Map<String, dynamic>.from(anamnesis);
     } catch (_) {
@@ -260,6 +258,7 @@ class _CoachAthleteWorkoutsReviewScreenState
     if (v.contains('bike') || v.contains('cicl')) return 'Ciclismo';
     if (v.contains('strength') || v.contains('forca')) return 'Força';
     if (v.contains('rest')) return 'Descanso';
+    if (v.contains('swimrun')) return 'Swimrun';
     return raw.isEmpty ? 'Geral' : raw;
   }
 
@@ -382,6 +381,34 @@ class _CoachAthleteWorkoutsReviewScreenState
       'max_phase': maxPhase,
       'min_phase': minPhase,
     };
+  }
+
+  Map<int, Map<String, num>> _phaseByRaceSummary() {
+    final Map<int, Map<String, num>> summary = {};
+
+    for (final race in _targetRaces) {
+      final raceId = race['id'];
+      if (raceId is int) {
+        summary[raceId] = {};
+      }
+    }
+
+    for (final w in _allWorkouts) {
+      final workoutDate = _parseDate((w['scheduled_date'] ?? '').toString());
+      if (workoutDate == null) continue;
+
+      final race = _mainRaceForWorkoutDate(workoutDate);
+      final raceId = race?['id'];
+      if (raceId is! int) continue;
+
+      final phase = _phaseOf(w);
+      final duration = _durationSec(w);
+
+      summary.putIfAbsent(raceId, () => {});
+      summary[raceId]![phase] = (summary[raceId]![phase] ?? 0) + duration;
+    }
+
+    return summary;
   }
 
   List<Map<String, dynamic>> _weeklySummary() {
@@ -625,20 +652,50 @@ class _CoachAthleteWorkoutsReviewScreenState
   }
 
   Widget _buildAthleteContextSection() {
-    final weight = _pickString(_athlete, ['weight_kg', 'weight']);
-    final height = _pickString(_athlete, ['height_cm', 'height']);
-    final level = _pickString(_athlete, ['experience_level', 'fitness_level', 'level']);
+    final weight = _pickString(
+      _latestMetrics,
+      ['weight_kg', 'weight'],
+    ).isNotEmpty
+        ? _pickString(_latestMetrics, ['weight_kg', 'weight'])
+        : _pickString(_athlete, ['weight_kg', 'weight']);
+
+    final height = _pickString(
+      _latestMetrics,
+      ['height_cm', 'height'],
+    ).isNotEmpty
+        ? _pickString(_latestMetrics, ['height_cm', 'height'])
+        : _pickString(_athlete, ['height_cm', 'height']);
+
+    final level = _pickString(
+      _athlete,
+      ['experience_level', 'fitness_level', 'level'],
+    );
+
     final gender = _pickString(_athlete, ['gender']);
-    final maxHr = _pickString(_athlete, ['max_hr', 'hr_max']);
-    final restHr = _pickString(_athlete, ['resting_hr', 'rest_hr']);
+    final maxHr = _pickString(
+      _latestMetrics,
+      ['max_hr', 'hr_max'],
+    ).isNotEmpty
+        ? _pickString(_latestMetrics, ['max_hr', 'hr_max'])
+        : _pickString(_athlete, ['max_hr', 'hr_max']);
+
+    final restHr = _pickString(
+      _latestMetrics,
+      ['resting_hr', 'rest_hr'],
+    ).isNotEmpty
+        ? _pickString(_latestMetrics, ['resting_hr', 'rest_hr'])
+        : _pickString(_athlete, ['resting_hr', 'rest_hr']);
+
     final vo2 = _pickString(
       _latestMetrics,
       ['vo2max', 'vo2_max', 'vo2_estimated', 'vo2max_estimated'],
     );
+
     final comorbidity = _pickString(
       _anamnesis,
       ['comorbidities', 'comorbidity', 'medical_conditions', 'health_conditions'],
     );
+
     final restrictions = _pickString(
       _anamnesis,
       ['restrictions', 'limitations', 'injury_history', 'notes'],
@@ -780,6 +837,7 @@ class _CoachAthleteWorkoutsReviewScreenState
     final phaseHours = (s['phase_hours'] as Map<String, num>);
     final maxPhase = (s['max_phase'] ?? 0) as num;
     final minPhase = (s['min_phase'] ?? 0) as num;
+    final phaseByRace = _phaseByRaceSummary();
 
     return _sectionContainer(
       title: 'Resumo global de treinos',
@@ -859,6 +917,52 @@ class _CoachAthleteWorkoutsReviewScreenState
                 ),
               );
             }),
+          const SizedBox(height: 18),
+          const Text(
+            'Distribuição por fase dentro de cada prova alvo',
+            style: TextStyle(fontWeight: FontWeight.w700),
+          ),
+          const SizedBox(height: 10),
+          if (phaseByRace.isEmpty)
+            const Text('Sem dados por prova alvo.')
+          else
+            ..._targetRaces.map((race) {
+              final raceId = race['id'];
+              if (raceId is! int) return const SizedBox.shrink();
+
+              final raceName = _raceDisplayName(race);
+              final raceDate = _dateText((race['race_date'] ?? '').toString());
+              final phaseMap = phaseByRace[raceId] ?? {};
+
+              return Container(
+                width: double.infinity,
+                margin: const EdgeInsets.only(bottom: 12),
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(12),
+                  color: const Color(0xFFF7F7F9),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '$raceName • $raceDate',
+                      style: const TextStyle(fontWeight: FontWeight.w700),
+                    ),
+                    const SizedBox(height: 8),
+                    if (phaseMap.isEmpty)
+                      const Text('Sem carga atribuída a esta prova.')
+                    else
+                      ...phaseMap.entries.map((e) {
+                        return Padding(
+                          padding: const EdgeInsets.only(bottom: 6),
+                          child: Text('${e.key}: ${_formatHours(e.value)}'),
+                        );
+                      }),
+                  ],
+                ),
+              );
+            }).toList(),
         ],
       ),
     );
