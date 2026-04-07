@@ -1,151 +1,110 @@
-# Trinium Sports — BACKEND_SCHEMA_SNAPSHOT (Supabase source of truth)
+# BACKEND_SCHEMA_SNAPSHOT
 
-Este arquivo é o “contrato” entre Frontend e Backend.  
-Antes de criar campos/tabelas no app, conferir aqui.
-
----
-
-## 1) Auth & Profiles
-
-### 1.1 auth.users (Supabase Auth)
-- Armazena metadata do signUp:
-  - `raw_user_meta_data->>'user_role'`
-  - `raw_user_meta_data->>'full_name'`
-  - (opcional) `raw_user_meta_data->>'cref_number'`
-
-### 1.2 public.profiles
-**Chaves**
-- `id` (uuid, PK, = auth.users.id)
-
-**Campos**
-- `email` (text)
-- `full_name` (text)
-- `avatar_url` (text)
-- `user_role` (text) — permitido: athlete | coach | admin (NOT NULL e não vazio)
-
-**Gatilho**
-- `public.handle_new_user()` (trigger em auth.users) cria/atualiza `public.profiles` preenchendo `user_role` com fallback `athlete`.
+## Snapshot funcional do backend confirmado na documentação
 
 ---
 
-## 2) Profissional (Coach/Nutri/Híbrido)
+## 1. Tabela `public.athletes`
+Campos confirmados:
+- `id`
+- `birth_date`
+- `gender`
+- `height_cm`
+- `weight_kg`
+- `experience_level`
+- `resting_hr`
+- `max_hr`
+- `vo2_max`
+- `garmin_connected`
+- `fitness_level`
+- `phase`
 
-### 2.1 public.coaches
-**Chaves**
-- `id` (uuid, PK, FK = profiles.id)
-
-**Campos importantes do produto**
-- `professional_type` (text): coach | nutritionist | hybrid
-- `cref_number` (text): usado como registro (CREF/CRN dependendo do tipo)
-- `phone_mobile` (text)
-- `address_zip_code` (text)
-- `specialties` (text[]): run, swim, bike, strength, trail, triathlon
-- `bio` (text)
-
-**Documentos (auditoria)**
-- `verification_documents` (json/jsonb list)
-  - items com: type, bucket, path, filename, uploaded_at
-  - type: identity | council | lookup_print
-- `verification_submitted_at` (timestamptz) — quando os 3 tipos existem
-
-**Status (pode existir, mas não bloqueia no modelo atual)**
-- `verification_status`: pending/verified/rejected (se existir)
-- `verification_mode`: manual/auto (se existir)
-- `auto_score`, `auto_result`, `auto_reason` (se existirem; OCR foi abandonado)
+Uso no sistema:
+- contexto global do atleta
+- referência para dashboard do treinador
+- base para interpretação da prescrição
 
 ---
 
-## 3) Atleta (base do motor)
+## 2. Tabela `public.target_races`
+Campos confirmados:
+- `id`
+- `athlete_id`
+- `activity_type_id`
+- `name`
+- `race_date`
+- `distance_meters`
+- `elevation_gain_m`
+- `priority`
+- `status`
+- `calculated_race_category_id`
 
-### 3.1 public.athletes
-**Chaves**
-- `id` (uuid, PK, FK = profiles.id)
-
-**Campos fisiológicos e de nível**
-- `birth_date` (date)
-- `gender` (text): male|female|other
-- `height_cm` (double)
-- `weight_kg` (double)
-- `experience_level` (text): beginner|intermediate|advanced|elite
-- `resting_hr` (int)
-- `max_hr` (int)
-- `vo2_max` (double)
-
-**Campos adicionais**
-- `fitness_level` (text)
-- `basal_metabolic_rate` (int)
-- `dietary_restrictions` (text[])
-- `phase` (text) — ex.: base/build/peak
-
-**Integrações**
-- `garmin_connected` (bool)
-- `garmin_access_token` (text)
-
-### 3.2 public.athlete_capacity
-**Chave**
-- `athlete_id` (uuid, UNIQUE)
-
-**Campos**
-- `leg_capacity_max`, `push_capacity_max`, `pull_capacity_max`, `core_capacity_max`
-- `total_weekly_hours`
-- `last_calibration_date`
-
-### 3.3 public.athlete_zones
-**Chave**
-- `athlete_id` (uuid)
-
-**Campos**
-- `hr_max`, `vo2_max`
-- `pace_z1_sec` ... `pace_z5_sec`
-- `updated_at`
+Uso no sistema:
+- calendário esportivo do atleta
+- prova alvo principal
+- classificação esportiva da prova
+- priorização do planejamento
 
 ---
 
-## 4) Marketplace e Relacionamentos
+## 3. Segmentos de prova multiesporte
+A documentação mostra duas estruturas possíveis:
 
-### 4.1 public.coach_athlete_relation
-- Vincula atleta ↔ profissional
-- Esperado: status (pending/active/rejected/archived), timestamps
+### Opção A
+`public.target_race_segments`
+Campos esperados:
+- `target_race_id`
+- `activity_type_id`
+- `distance_meters`
+- `segment_order`
 
----
+### Opção B
+`public.race_segments`
+Campos esperados:
+- `target_race_id`
+- `activity_type_id`
+- `distance_meters`
+- `segment_order`
 
-## 5) Motor de treino (prescrição)
-
-### 5.1 Templates e regras
-- `workout_templates`
-- `workout_template_steps`
-- `session_rules`
-- `phase_volume_targets`
-- `weekly_constraints`
-- `standard_week_patterns`
-- `standard_week_pattern_sessions`
-
-### 5.2 Prescrição gerada
-- `prescribed_workouts`
-- `prescribed_workout_steps`
-
-### 5.3 Execução e feedback
-- `completed_activities`
-- `activity_geo_streams`
-- `athlete_metrics_log`
-- `smart_alerts`
-- `knowledge_base_risk_matrix`
-- `athlete_pain_logs`, `athlete_anamnesis`
+Uso no sistema:
+- detalhamento por atividade em provas multiesporte
+- exemplo: swimrun com corrida + natação
 
 ---
 
-## 6) Nutrição (opcional)
-- `nutrition_plans`
-- `nutrition_daily_menus`
-- `nutrition_daily_logs`
+## 4. Tabela `public.prescribed_workouts`
+Uso no sistema:
+- armazenar treinos gerados
+- permitir revisão pelo treinador
+- controlar publicação para o atleta
+
+Fluxo:
+- `pending` → revisão
+- `published` → visível para o atleta
 
 ---
 
-## 7) Storage (Supabase)
+## 5. Função de geração
+Função principal:
+- `public.path_b_generate_plan(...)`
 
-### 7.1 Bucket: avatars (público)
-- Fotos de perfil
+Estado atual:
+- gera por uma prova por execução
+- ainda não considera o calendário inteiro do atleta
 
-### 7.2 Bucket: professional-verification (privado)
-- Documentos do profissional (auditoria)
-- Estrutura: `<user_id>/<type>_timestamp.ext`
+---
+
+## 6. Base de periodização
+Tabela:
+- `public.knowledge_base_periodization`
+
+Uso:
+- semanas recomendadas
+- parâmetros de volume
+- apoio à definição da lógica de fase
+
+---
+
+## 7. Observação estratégica
+O frontend deve sempre refletir o backend documentado.
+Evitar decisões por suposição quando o schema já estiver disponível.
