@@ -26,10 +26,12 @@ class _CoachAthleteWorkoutsReviewScreenState
   String? _msg;
   String _statusFilter = 'pending';
 
-  List<Map<String, dynamic>> _workouts = [];
-  Map<String, dynamic>? _mainRace;
-  Map<String, dynamic>? _summary;
-  List<Map<String, dynamic>> _weeklySummary = [];
+  List<Map<String, dynamic>> _allWorkouts = [];
+  List<Map<String, dynamic>> _filteredWorkouts = [];
+  List<Map<String, dynamic>> _targetRaces = [];
+  Map<String, dynamic>? _athlete;
+  Map<String, dynamic>? _anamnesis;
+  Map<String, dynamic>? _latestMetrics;
 
   @override
   void initState() {
@@ -45,118 +47,119 @@ class _CoachAthleteWorkoutsReviewScreenState
 
     try {
       await Future.wait([
-        _loadMainRace(),
+        _loadAthleteContext(),
+        _loadTargetRaces(),
         _loadWorkouts(),
       ]);
-      _buildSummary();
+      _applyFilter();
     } catch (e) {
-      _msg = 'Erro ao carregar treinos: $e';
+      _msg = 'Erro ao carregar dashboard: $e';
     } finally {
       if (mounted) setState(() => _loading = false);
     }
   }
 
-  Future<void> _loadMainRace() async {
-    final races = await _client
-        .from('target_races')
-        .select(
-          'id, athlete_id, race_date, status, distance_meters, priority, calculated_race_category_id, activity_type_id'
-        )
-        .eq('athlete_id', widget.athleteId)
-        .eq('status', 'planned')
-        .order('race_date', ascending: true)
-        .limit(1);
+  Future<void> _loadAthleteContext() async {
+    try {
+      final athlete = await _client
+          .from('athletes')
+          .select('*')
+          .eq('id', widget.athleteId)
+          .maybeSingle();
 
-    if ((races as List).isNotEmpty) {
-      _mainRace = Map<String, dynamic>.from(races.first);
-    } else {
-      _mainRace = null;
+      if (athlete != null) {
+        _athlete = Map<String, dynamic>.from(athlete);
+      } else {
+        _athlete = null;
+      }
+    } catch (_) {
+      _athlete = null;
     }
+
+    try {
+      final anamnesis = await _client
+          .from('athlete_anamnesis')
+          .select('*')
+          .eq('athlete_id', widget.athleteId)
+          .maybeSingle();
+
+      if (anamnesis != null) {
+        _anamnesis = Map<String, dynamic>.from(anamnesis);
+      } else {
+        _anamnesis = null;
+      }
+    } catch (_) {
+      _anamnesis = null;
+    }
+
+    try {
+      final metrics = await _client
+          .from('athlete_metrics_log')
+          .select('*')
+          .eq('athlete_id', widget.athleteId)
+          .order('created_at', ascending: false)
+          .limit(1);
+
+      if ((metrics as List).isNotEmpty) {
+        _latestMetrics = Map<String, dynamic>.from(metrics.first);
+      } else {
+        _latestMetrics = null;
+      }
+    } catch (_) {
+      _latestMetrics = null;
+    }
+  }
+
+  Future<void> _loadTargetRaces() async {
+    final res = await _client
+        .from('target_races')
+        .select('*')
+        .eq('athlete_id', widget.athleteId)
+        .order('race_date', ascending: true);
+
+    _targetRaces = (res as List).cast<Map<String, dynamic>>();
   }
 
   Future<void> _loadWorkouts() async {
-    var query = _client
+    final res = await _client
         .from('prescribed_workouts')
         .select('*')
-        .eq('athlete_id', widget.athleteId);
+        .eq('athlete_id', widget.athleteId)
+        .order('scheduled_date', ascending: true);
 
-    if (_statusFilter != 'all') {
-      query = query.eq('validation_status', _statusFilter);
-    }
-
-    final res = await query.order('scheduled_date', ascending: true);
-    _workouts = (res as List).cast<Map<String, dynamic>>();
+    _allWorkouts = (res as List).cast<Map<String, dynamic>>();
   }
 
-  void _buildSummary() {
-    final total = _workouts.length;
-    int pending = 0;
-    int published = 0;
-
-    num totalDurationSec = 0;
-    final Map<String, int> byTimeSlot = {};
-    final Map<String, int> byStatus = {};
-    final Map<String, Map<String, dynamic>> weekMap = {};
-
-    for (final w in _workouts) {
-      final status = (w['validation_status'] ?? '').toString();
-      final timeSlot = (w['time_slot'] ?? 'Sem período').toString();
-      final duration = (w['planned_duration_sec'] ?? 0);
-
-      if (status == 'pending') pending++;
-      if (status == 'published') published++;
-
-      byStatus[status] = (byStatus[status] ?? 0) + 1;
-      byTimeSlot[timeSlot] = (byTimeSlot[timeSlot] ?? 0) + 1;
-
-      if (duration is num) {
-        totalDurationSec += duration;
-      }
-
-      final date = (w['scheduled_date'] ?? '').toString();
-      final weekKey = _weekKey(date);
-
-      weekMap.putIfAbsent(weekKey, () {
-        return {
-          'week_key': weekKey,
-          'total_sessions': 0,
-          'pending': 0,
-          'published': 0,
-          'total_duration_sec': 0,
-        };
-      });
-
-      weekMap[weekKey]!['total_sessions'] =
-          (weekMap[weekKey]!['total_sessions'] as int) + 1;
-
-      if (status == 'pending') {
-        weekMap[weekKey]!['pending'] =
-            (weekMap[weekKey]!['pending'] as int) + 1;
-      }
-      if (status == 'published') {
-        weekMap[weekKey]!['published'] =
-            (weekMap[weekKey]!['published'] as int) + 1;
-      }
-      if (duration is num) {
-        weekMap[weekKey]!['total_duration_sec'] =
-            (weekMap[weekKey]!['total_duration_sec'] as num) + duration;
-      }
+  void _applyFilter() {
+    if (_statusFilter == 'all') {
+      _filteredWorkouts = List<Map<String, dynamic>>.from(_allWorkouts);
+      return;
     }
 
-    _summary = {
-      'total': total,
-      'pending': pending,
-      'published': published,
-      'total_duration_sec': totalDurationSec,
-      'by_status': byStatus,
-      'by_time_slot': byTimeSlot,
-    };
+    _filteredWorkouts = _allWorkouts
+        .where((w) => (w['validation_status'] ?? '').toString() == _statusFilter)
+        .toList();
+  }
 
-    _weeklySummary = weekMap.values
-        .map((e) => Map<String, dynamic>.from(e))
-        .toList()
-      ..sort((a, b) =>
-          (a['week_key'] ?? '').toString().compareTo((b['week_key'] ?? '').toString()));
+  dynamic _pickValue(Map<String, dynamic>? map, List<String> keys) {
+    if (map == null) return null;
+    for (final key in keys) {
+      if (map.containsKey(key) && map[key] != null) {
+        final value = map[key];
+        if (value is String && value.trim().isEmpty) continue;
+        return value;
+      }
+    }
+    return null;
+  }
+
+  String _pickString(Map<String, dynamic>? map, List<String> keys) {
+    final value = _pickValue(map, keys);
+    return value == null ? '' : value.toString();
+  }
+
+  String _dateText(String raw) {
+    return raw.length >= 10 ? raw.substring(0, 10) : raw;
   }
 
   String _weekKey(String rawDate) {
@@ -170,13 +173,157 @@ class _CoachAthleteWorkoutsReviewScreenState
     return '$y-$m-$d';
   }
 
-  String _dateText(String raw) {
-    return raw.length >= 10 ? raw.substring(0, 10) : raw;
+  num _durationSec(Map<String, dynamic> w) {
+    final value = w['planned_duration_sec'];
+    return value is num ? value : 0;
   }
 
   String _formatHours(num totalSec) {
     final hours = totalSec / 3600.0;
     return '${hours.toStringAsFixed(1)}h';
+  }
+
+  String _phaseOf(Map<String, dynamic> w) {
+    final candidates = [
+      'periodization_phase',
+      'training_phase',
+      'phase',
+      'macro_phase',
+    ];
+    for (final key in candidates) {
+      final v = (w[key] ?? '').toString().trim();
+      if (v.isNotEmpty) return v;
+    }
+
+    final title = (w['title'] ?? '').toString().toLowerCase();
+    if (title.contains('base')) return 'base';
+    if (title.contains('build')) return 'build';
+    if (title.contains('peak')) return 'peak';
+    if (title.contains('taper')) return 'taper';
+    if (title.contains('race')) return 'race';
+
+    return 'sem_fase';
+  }
+
+  String _activityOf(Map<String, dynamic> w) {
+    final candidates = [
+      'activity_type_id',
+      'activity_type',
+      'sport',
+      'modality',
+    ];
+    for (final key in candidates) {
+      final v = (w[key] ?? '').toString().trim();
+      if (v.isNotEmpty) return v;
+    }
+
+    final title = (w['title'] ?? '').toString().toLowerCase();
+    if (title.contains('swim') || title.contains('nata')) return 'swim';
+    if (title.contains('bike') || title.contains('cicl')) return 'bike';
+    if (title.contains('strength') || title.contains('força')) return 'strength';
+    if (title.contains('trail')) return 'trail';
+    if (title.contains('run') || title.contains('corr')) return 'run';
+
+    return 'geral';
+  }
+
+  Map<String, dynamic> _globalSummary() {
+    int pending = 0;
+    int published = 0;
+    num totalDuration = 0;
+
+    final Map<String, num> phaseHours = {};
+
+    for (final w in _allWorkouts) {
+      final status = (w['validation_status'] ?? '').toString();
+      final duration = _durationSec(w);
+      final phase = _phaseOf(w);
+
+      if (status == 'pending') pending++;
+      if (status == 'published') published++;
+      totalDuration += duration;
+
+      phaseHours[phase] = (phaseHours[phase] ?? 0) + duration;
+    }
+
+    num maxPhase = 0;
+    num minPhase = 0;
+    if (phaseHours.isNotEmpty) {
+      final values = phaseHours.values.toList();
+      maxPhase = values.reduce((a, b) => a > b ? a : b);
+      minPhase = values.reduce((a, b) => a < b ? a : b);
+    }
+
+    return {
+      'total': _allWorkouts.length,
+      'pending': pending,
+      'published': published,
+      'total_duration_sec': totalDuration,
+      'phase_hours': phaseHours,
+      'max_phase': maxPhase,
+      'min_phase': minPhase,
+    };
+  }
+
+  List<Map<String, dynamic>> _weeklySummary() {
+    final Map<String, Map<String, dynamic>> weekMap = {};
+
+    for (final w in _allWorkouts) {
+      final date = (w['scheduled_date'] ?? '').toString();
+      final week = _weekKey(date);
+      final phase = _phaseOf(w);
+      final activity = _activityOf(w);
+      final duration = _durationSec(w);
+
+      weekMap.putIfAbsent(week, () {
+        return {
+          'week': week,
+          'phase': phase,
+          'total_sessions': 0,
+          'total_duration_sec': 0,
+          'activity_counts': <String, int>{},
+          'target_races': <String>[],
+        };
+      });
+
+      weekMap[week]!['total_sessions'] =
+          (weekMap[week]!['total_sessions'] as int) + 1;
+      weekMap[week]!['total_duration_sec'] =
+          (weekMap[week]!['total_duration_sec'] as num) + duration;
+
+      final activityCounts =
+          weekMap[week]!['activity_counts'] as Map<String, int>;
+      activityCounts[activity] = (activityCounts[activity] ?? 0) + 1;
+    }
+
+    for (final race in _targetRaces) {
+      final date = (race['race_date'] ?? '').toString();
+      final week = _weekKey(date);
+
+      weekMap.putIfAbsent(week, () {
+        return {
+          'week': week,
+          'phase': '',
+          'total_sessions': 0,
+          'total_duration_sec': 0,
+          'activity_counts': <String, int>{},
+          'target_races': <String>[],
+        };
+      });
+
+      final races = weekMap[week]!['target_races'] as List<String>;
+      final distance = (race['distance_meters'] ?? '').toString();
+      final priority = (race['priority'] ?? '').toString();
+      races.add('Prova ${distance}m${priority.isNotEmpty ? ' (${priority})' : ''}');
+    }
+
+    final list = weekMap.values
+        .map((e) => Map<String, dynamic>.from(e))
+        .toList()
+      ..sort((a, b) =>
+          (a['week'] ?? '').toString().compareTo((b['week'] ?? '').toString()));
+
+    return list;
   }
 
   Future<void> _openWorkout(int workoutId) async {
@@ -251,12 +398,13 @@ class _CoachAthleteWorkoutsReviewScreenState
     );
   }
 
-  Widget _infoCard({
+  Widget _metricCard({
     required String title,
     required String value,
     IconData? icon,
   }) {
     return Container(
+      width: 210,
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(16),
@@ -303,18 +451,10 @@ class _CoachAthleteWorkoutsReviewScreenState
     );
   }
 
-  Widget _buildMainRaceSection() {
-    final race = _mainRace;
-    if (race == null) {
-      return const SizedBox.shrink();
-    }
-
-    final raceDate = _dateText((race['race_date'] ?? '').toString());
-    final distance = (race['distance_meters'] ?? '').toString();
-    final priority = (race['priority'] ?? '').toString();
-    final category = (race['calculated_race_category_id'] ?? '').toString();
-    final activity = (race['activity_type_id'] ?? '').toString();
-
+  Widget _sectionContainer({
+    required String title,
+    required Widget child,
+  }) {
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
       padding: const EdgeInsets.all(18),
@@ -332,161 +472,277 @@ class _CoachAthleteWorkoutsReviewScreenState
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            'Prova alvo',
-            style: TextStyle(
+          Text(
+            title,
+            style: const TextStyle(
               fontSize: 18,
               fontWeight: FontWeight.w700,
             ),
           ),
           const SizedBox(height: 12),
-          Wrap(
-            spacing: 12,
-            runSpacing: 12,
-            children: [
-              _infoCard(title: 'Data', value: raceDate, icon: Icons.event),
-              _infoCard(title: 'Distância', value: '${distance}m', icon: Icons.straighten),
-              _infoCard(title: 'Prioridade', value: priority, icon: Icons.flag),
-              _infoCard(title: 'Categoria', value: category, icon: Icons.category),
-              _infoCard(title: 'Atividade', value: activity, icon: Icons.directions_run),
-            ],
-          ),
+          child,
         ],
       ),
     );
   }
 
-  Widget _buildSummarySection() {
-    final s = _summary;
-    if (s == null) return const SizedBox.shrink();
+  Widget _buildAthleteContextSection() {
+    final weight = _pickString(_athlete, ['weight_kg', 'weight']);
+    final height = _pickString(_athlete, ['height_cm', 'height']);
+    final level = _pickString(_athlete, ['experience_level', 'fitness_level', 'level']);
+    final gender = _pickString(_athlete, ['gender']);
+    final maxHr = _pickString(_athlete, ['max_hr', 'hr_max']);
+    final restHr = _pickString(_athlete, ['resting_hr', 'rest_hr']);
+    final vo2 = _pickString(
+      _latestMetrics,
+      ['vo2max', 'vo2_max', 'vo2_estimated', 'vo2max_estimated'],
+    );
+    final comorbidity = _pickString(
+      _anamnesis,
+      ['comorbidities', 'comorbidity', 'medical_conditions', 'health_conditions'],
+    );
+    final restrictions = _pickString(
+      _anamnesis,
+      ['restrictions', 'limitations', 'injury_history', 'notes'],
+    );
 
-    return Container(
-      margin: const EdgeInsets.only(bottom: 16),
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(18),
-        color: Colors.white,
-        boxShadow: const [
-          BoxShadow(
-            blurRadius: 14,
-            offset: Offset(0, 6),
-            color: Color(0x12000000),
-          ),
+    return _sectionContainer(
+      title: 'Contexto do atleta',
+      child: Wrap(
+        spacing: 12,
+        runSpacing: 12,
+        children: [
+          _metricCard(title: 'Peso', value: weight.isEmpty ? '-' : '$weight kg', icon: Icons.monitor_weight),
+          _metricCard(title: 'Altura', value: height.isEmpty ? '-' : '$height cm', icon: Icons.height),
+          _metricCard(title: 'Nível', value: level.isEmpty ? '-' : level, icon: Icons.speed),
+          _metricCard(title: 'VO2', value: vo2.isEmpty ? '-' : vo2, icon: Icons.favorite),
+          _metricCard(title: 'FC repouso', value: restHr.isEmpty ? '-' : restHr, icon: Icons.monitor_heart),
+          _metricCard(title: 'FC máxima', value: maxHr.isEmpty ? '-' : maxHr, icon: Icons.bolt),
+          _metricCard(title: 'Gênero', value: gender.isEmpty ? '-' : gender, icon: Icons.person),
+          _metricCard(title: 'Comorbidades', value: comorbidity.isEmpty ? '-' : comorbidity, icon: Icons.medical_information),
+          _metricCard(title: 'Restrições', value: restrictions.isEmpty ? '-' : restrictions, icon: Icons.warning_amber),
         ],
       ),
+    );
+  }
+
+  Widget _buildTargetRacesSection() {
+    if (_targetRaces.isEmpty) {
+      return _sectionContainer(
+        title: 'Calendário de provas alvo',
+        child: const Text('Nenhuma prova alvo encontrada.'),
+      );
+    }
+
+    return _sectionContainer(
+      title: 'Calendário de provas alvo',
+      child: Column(
+        children: _targetRaces.map((race) {
+          final raceDate = _dateText((race['race_date'] ?? '').toString());
+          final distance = (race['distance_meters'] ?? '').toString();
+          final priority = (race['priority'] ?? '').toString();
+          final category =
+              (race['calculated_race_category_id'] ?? '').toString();
+          final activity = (race['activity_type_id'] ?? '').toString();
+          final status = (race['status'] ?? '').toString();
+
+          return Container(
+            width: double.infinity,
+            margin: const EdgeInsets.only(bottom: 10),
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(12),
+              color: const Color(0xFFF7F7F9),
+            ),
+            child: Wrap(
+              spacing: 12,
+              runSpacing: 8,
+              children: [
+                Text('Data: $raceDate'),
+                Text('Distância: ${distance}m'),
+                Text('Prioridade: $priority'),
+                Text('Categoria: $category'),
+                Text('Atividade: $activity'),
+                Text('Status: $status'),
+              ],
+            ),
+          );
+        }).toList(),
+      ),
+    );
+  }
+
+  Widget _buildGlobalSummarySection() {
+    final s = _globalSummary();
+    final phaseHours = (s['phase_hours'] as Map<String, num>);
+    final maxPhase = (s['max_phase'] ?? 0) as num;
+    final minPhase = (s['min_phase'] ?? 0) as num;
+
+    return _sectionContainer(
+      title: 'Resumo global de treinos',
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            'Resumo global do plano',
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-          const SizedBox(height: 12),
           Wrap(
             spacing: 12,
             runSpacing: 12,
             children: [
-              _infoCard(
-                title: 'Total de treinos',
-                value: '${s['total']}',
-                icon: Icons.fitness_center,
-              ),
-              _infoCard(
-                title: 'Pendentes',
-                value: '${s['pending']}',
-                icon: Icons.schedule,
-              ),
-              _infoCard(
-                title: 'Publicados',
-                value: '${s['published']}',
-                icon: Icons.check_circle,
-              ),
-              _infoCard(
-                title: 'Carga planejada',
-                value: _formatHours((s['total_duration_sec'] ?? 0) as num),
-                icon: Icons.timer,
-              ),
+              _metricCard(title: 'Total de treinos', value: '${s['total']}', icon: Icons.fitness_center),
+              _metricCard(title: 'Pendentes', value: '${s['pending']}', icon: Icons.schedule),
+              _metricCard(title: 'Publicados', value: '${s['published']}', icon: Icons.check_circle),
+              _metricCard(title: 'Carga total', value: _formatHours((s['total_duration_sec'] ?? 0) as num), icon: Icons.timer),
+              _metricCard(title: 'Carga máx. por fase', value: _formatHours(maxPhase), icon: Icons.trending_up),
+              _metricCard(title: 'Carga mín. por fase', value: _formatHours(minPhase), icon: Icons.trending_down),
             ],
           ),
+          const SizedBox(height: 18),
+          const Text(
+            'Distribuição de carga horária por fase',
+            style: TextStyle(fontWeight: FontWeight.w700),
+          ),
+          const SizedBox(height: 10),
+          if (phaseHours.isEmpty)
+            const Text('Sem dados de fase disponíveis.')
+          else
+            ...phaseHours.entries.map((entry) {
+              final phase = entry.key;
+              final value = entry.value;
+              final ratio = maxPhase > 0 ? (value / maxPhase) : 0.0;
+
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    final barWidth = constraints.maxWidth * ratio.clamp(0, 1);
+
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                phase,
+                                style: const TextStyle(fontWeight: FontWeight.w600),
+                              ),
+                            ),
+                            Text(_formatHours(value)),
+                          ],
+                        ),
+                        const SizedBox(height: 6),
+                        Stack(
+                          children: [
+                            Container(
+                              height: 14,
+                              width: constraints.maxWidth,
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFE9EDF5),
+                                borderRadius: BorderRadius.circular(20),
+                              ),
+                            ),
+                            Container(
+                              height: 14,
+                              width: barWidth,
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF607D8B),
+                                borderRadius: BorderRadius.circular(20),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    );
+                  },
+                ),
+              );
+            }),
         ],
       ),
     );
   }
 
   Widget _buildWeeklySummarySection() {
-    if (_weeklySummary.isEmpty) return const SizedBox.shrink();
+    final weeks = _weeklySummary();
+    if (weeks.isEmpty) {
+      return _sectionContainer(
+        title: 'Resumo semanal',
+        child: const Text('Sem dados semanais.'),
+      );
+    }
 
-    return Container(
-      margin: const EdgeInsets.only(bottom: 16),
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(18),
-        color: Colors.white,
-        boxShadow: const [
-          BoxShadow(
-            blurRadius: 14,
-            offset: Offset(0, 6),
-            color: Color(0x12000000),
-          ),
-        ],
-      ),
+    return _sectionContainer(
+      title: 'Resumo semanal',
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            'Resumo semanal',
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-          const SizedBox(height: 12),
-          ..._weeklySummary.map((week) {
-            final weekKey = (week['week_key'] ?? '').toString();
-            final totalSessions = (week['total_sessions'] ?? 0).toString();
-            final pending = (week['pending'] ?? 0).toString();
-            final published = (week['published'] ?? 0).toString();
-            final totalDuration = _formatHours(
-              (week['total_duration_sec'] ?? 0) as num,
-            );
+        children: weeks.map((week) {
+          final weekKey = (week['week'] ?? '').toString();
+          final phase = (week['phase'] ?? '').toString();
+          final totalSessions = (week['total_sessions'] ?? 0).toString();
+          final totalDuration = _formatHours((week['total_duration_sec'] ?? 0) as num);
+          final activityCounts =
+              (week['activity_counts'] as Map<String, int>);
+          final targetRaces = (week['target_races'] as List<String>);
 
-            return Container(
-              margin: const EdgeInsets.only(bottom: 10),
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(12),
-                color: const Color(0xFFF7F7F9),
-              ),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      'Semana de $weekKey',
-                      style: const TextStyle(fontWeight: FontWeight.w700),
-                    ),
+          return Container(
+            width: double.infinity,
+            margin: const EdgeInsets.only(bottom: 12),
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(12),
+              color: const Color(0xFFF7F7F9),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Semana de $weekKey',
+                  style: const TextStyle(fontWeight: FontWeight.w700),
+                ),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 12,
+                  runSpacing: 8,
+                  children: [
+                    Text('Fase: ${phase.isEmpty ? '-' : phase}'),
+                    Text('Sessões: $totalSessions'),
+                    Text('Carga: $totalDuration'),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                if (activityCounts.isNotEmpty)
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: activityCounts.entries.map((e) {
+                      return Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(20),
+                          color: const Color(0xFFE9EDF5),
+                        ),
+                        child: Text('${e.key}: ${e.value}'),
+                      );
+                    }).toList(),
                   ),
-                  Text('Sessões: $totalSessions'),
-                  const SizedBox(width: 12),
-                  Text('Pend: $pending'),
-                  const SizedBox(width: 12),
-                  Text('Pub: $published'),
-                  const SizedBox(width: 12),
-                  Text(totalDuration),
+                if (targetRaces.isNotEmpty) ...[
+                  const SizedBox(height: 10),
+                  const Text(
+                    'Provas alvo da semana:',
+                    style: TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                  const SizedBox(height: 6),
+                  ...targetRaces.map((r) => Text('• $r')),
                 ],
-              ),
-            );
-          }),
-        ],
+              ],
+            ),
+          );
+        }).toList(),
       ),
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    final total = _workouts.length;
+    final total = _filteredWorkouts.length;
 
     return Scaffold(
       backgroundColor: const Color(0xFFF4F6FA),
@@ -506,7 +762,7 @@ class _CoachAthleteWorkoutsReviewScreenState
             child: DropdownButtonFormField<String>(
               value: _statusFilter,
               decoration: const InputDecoration(
-                labelText: 'Filtro',
+                labelText: 'Filtro dos treinos na lista',
                 border: OutlineInputBorder(),
                 filled: true,
               ),
@@ -517,7 +773,8 @@ class _CoachAthleteWorkoutsReviewScreenState
               ],
               onChanged: (value) async {
                 setState(() => _statusFilter = value ?? 'pending');
-                await _load();
+                _applyFilter();
+                setState(() {});
               },
             ),
           ),
@@ -535,99 +792,80 @@ class _CoachAthleteWorkoutsReviewScreenState
             child: ListView(
               padding: const EdgeInsets.all(16),
               children: [
-                _buildMainRaceSection(),
-                _buildSummarySection(),
+                _buildAthleteContextSection(),
+                _buildTargetRacesSection(),
+                _buildGlobalSummarySection(),
                 _buildWeeklySummarySection(),
-                Container(
-                  margin: const EdgeInsets.only(bottom: 16),
-                  padding: const EdgeInsets.all(18),
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(18),
-                    color: Colors.white,
-                    boxShadow: const [
-                      BoxShadow(
-                        blurRadius: 14,
-                        offset: Offset(0, 6),
-                        color: Color(0x12000000),
-                      ),
-                    ],
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Treinos do filtro (${total})',
-                        style: const TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      if (_workouts.isEmpty)
-                        const Text('Nenhum treino encontrado para este filtro.')
-                      else
-                        ..._workouts.map((w) {
-                          final workoutId = w['id'] as int;
-                          final title = (w['title'] ?? 'Treino').toString();
-                          final date = _dateText((w['scheduled_date'] ?? '').toString());
-                          final validationStatus =
-                              (w['validation_status'] ?? '').toString();
-                          final timeSlot = (w['time_slot'] ?? '').toString();
-                          final plannedRpe = (w['planned_rpe'] ?? '').toString();
-                          final description = (w['description'] ?? '').toString();
+                _sectionContainer(
+                  title: 'Treinos do filtro ($total)',
+                  child: _filteredWorkouts.isEmpty
+                      ? const Text('Nenhum treino encontrado para este filtro.')
+                      : Column(
+                          children: _filteredWorkouts.map((w) {
+                            final workoutId = w['id'] as int;
+                            final title = (w['title'] ?? 'Treino').toString();
+                            final date = _dateText((w['scheduled_date'] ?? '').toString());
+                            final validationStatus =
+                                (w['validation_status'] ?? '').toString();
+                            final timeSlot = (w['time_slot'] ?? '').toString();
+                            final plannedRpe =
+                                (w['planned_rpe'] ?? '').toString();
+                            final description =
+                                (w['description'] ?? '').toString();
 
-                          return Card(
-                            child: Padding(
-                              padding: const EdgeInsets.all(14),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Row(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Expanded(
-                                        child: Text(
-                                          title,
-                                          style: const TextStyle(
-                                            fontWeight: FontWeight.w700,
-                                            fontSize: 16,
+                            return Card(
+                              child: Padding(
+                                padding: const EdgeInsets.all(14),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Expanded(
+                                          child: Text(
+                                            title,
+                                            style: const TextStyle(
+                                              fontWeight: FontWeight.w700,
+                                              fontSize: 16,
+                                            ),
                                           ),
                                         ),
-                                      ),
-                                      _statusChip(validationStatus),
+                                        _statusChip(validationStatus),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 6),
+                                    Text('Data: $date'),
+                                    if (timeSlot.isNotEmpty)
+                                      Text('Período: $timeSlot'),
+                                    if (plannedRpe.isNotEmpty)
+                                      Text('RPE: $plannedRpe'),
+                                    if (description.isNotEmpty) ...[
+                                      const SizedBox(height: 8),
+                                      Text(description),
                                     ],
-                                  ),
-                                  const SizedBox(height: 6),
-                                  Text('Data: $date'),
-                                  if (timeSlot.isNotEmpty) Text('Período: $timeSlot'),
-                                  if (plannedRpe.isNotEmpty) Text('RPE: $plannedRpe'),
-                                  if (description.isNotEmpty) ...[
-                                    const SizedBox(height: 8),
-                                    Text(description),
-                                  ],
-                                  const SizedBox(height: 12),
-                                  Wrap(
-                                    spacing: 8,
-                                    runSpacing: 8,
-                                    children: [
-                                      FilledButton.tonal(
-                                        onPressed: () => _openWorkout(workoutId),
-                                        child: const Text('Revisar / editar'),
-                                      ),
-                                      if (validationStatus != 'published')
-                                        FilledButton(
-                                          onPressed: () => _publishDirect(workoutId),
-                                          child: const Text('Publicar para atleta'),
+                                    const SizedBox(height: 12),
+                                    Wrap(
+                                      spacing: 8,
+                                      runSpacing: 8,
+                                      children: [
+                                        FilledButton.tonal(
+                                          onPressed: () => _openWorkout(workoutId),
+                                          child: const Text('Revisar / editar'),
                                         ),
-                                    ],
-                                  ),
-                                ],
+                                        if (validationStatus != 'published')
+                                          FilledButton(
+                                            onPressed: () => _publishDirect(workoutId),
+                                            child: const Text('Publicar para atleta'),
+                                          ),
+                                      ],
+                                    ),
+                                  ],
+                                ),
                               ),
-                            ),
-                          );
-                        }),
-                    ],
-                  ),
+                            );
+                          }).toList(),
+                        ),
                 ),
               ],
             ),
