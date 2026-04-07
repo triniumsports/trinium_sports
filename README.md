@@ -1,8 +1,8 @@
 # TRINIUM SPORTS
 
-TRINIUM SPORTS é uma plataforma para conectar atletas e profissionais do esporte, com foco em:
+TRINIUM SPORTS é uma plataforma para conectar atletas e profissionais do esporte com foco em:
 - marketplace de treinadores e nutricionistas
-- gestão de vínculo atleta ↔ profissional
+- vínculo atleta ↔ profissional
 - geração automática de treinos
 - revisão e publicação pelo treinador
 - visualização pelo atleta
@@ -10,11 +10,11 @@ TRINIUM SPORTS é uma plataforma para conectar atletas e profissionais do esport
 
 ---
 
-## Arquitetura
-- **Backend:** Supabase
-- **Frontend:** Flutter Web
-- **Ambiente de desenvolvimento:** GitHub Codespaces
-- **Repositório:** GitHub
+## Stack
+- Backend: Supabase
+- Frontend: Flutter Web
+- Ambiente: GitHub Codespaces
+- Repositório: GitHub
 
 ---
 
@@ -31,16 +31,17 @@ TRINIUM SPORTS é uma plataforma para conectar atletas e profissionais do esport
 - dashboard inicial do treinador
 
 ### Em evolução
-- leitura consolidada do contexto do atleta
-- leitura consolidada do calendário completo de provas
-- motor calendar-aware
+- consolidação final do dashboard do treinador
+- evolução do motor para calendar-aware
 - edição avançada dos steps
 
 ---
 
 ## Fonte de verdade do backend
-### Contexto do atleta
-Tabela: `public.athletes`
+
+### Atleta
+Tabela:
+- `public.athletes`
 
 Campos principais:
 - `birth_date`
@@ -56,7 +57,8 @@ Campos principais:
 - `phase`
 
 ### Provas alvo
-Tabela: `public.target_races`
+Tabela:
+- `public.target_races`
 
 Campos principais:
 - `name`
@@ -75,30 +77,23 @@ Tabelas possíveis:
 
 ---
 
-## Fluxo funcional do treino
+## Fluxo principal
 1. atleta escolhe o treinador
 2. treinador aceita o atleta
 3. motor gera os treinos
-4. treinador revisa o plano
-5. treinador publica o treino
-6. atleta visualiza os treinos publicados
+4. treinador revisa
+5. treinador publica
+6. atleta visualiza o que foi publicado
 
 ---
 
-## Direção do produto
-O motor de geração deve evoluir para:
-- considerar o calendário inteiro do atleta
-- respeitar provas principais e secundárias
-- balancear melhor carga por fase
-- balancear melhor carga por atividade
-- aumentar produtividade em assessorias esportivas
-
----
-
-## Documentos importantes do repositório
+## Documentos importantes de continuidade
 - `PROJECT_STATE.md`
 - `ROADMAP.md`
 - `DECISIONS.md`
+- `README.md`
 - `BACKEND_SCHEMA_SNAPSHOT.md`
+- `FRONTEND_STATE.md`
+- `GENERATOR_ENGINE_NOTES.md`
 
-Esses arquivos devem ser mantidos sempre atualizados para continuidade do projeto entre chats.
+Esses arquivos devem ser atualizados a cada etapa importante do projeto.

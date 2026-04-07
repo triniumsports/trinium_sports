@@ -1,10 +1,8 @@
 # BACKEND_SCHEMA_SNAPSHOT
 
-## Snapshot funcional do backend confirmado na documentação
+## Tabelas-chave confirmadas
 
----
-
-## 1. Tabela `public.athletes`
+### public.athletes
 Campos confirmados:
 - `id`
 - `birth_date`
@@ -19,14 +17,7 @@ Campos confirmados:
 - `fitness_level`
 - `phase`
 
-Uso no sistema:
-- contexto global do atleta
-- referência para dashboard do treinador
-- base para interpretação da prescrição
-
----
-
-## 2. Tabela `public.target_races`
+### public.target_races
 Campos confirmados:
 - `id`
 - `athlete_id`
@@ -39,72 +30,20 @@ Campos confirmados:
 - `status`
 - `calculated_race_category_id`
 
-Uso no sistema:
-- calendário esportivo do atleta
-- prova alvo principal
-- classificação esportiva da prova
-- priorização do planejamento
+### Segmentos de prova
+Estruturas documentadas:
+- `target_race_segments`
+- `race_segments`
 
----
+### public.prescribed_workouts
+Uso:
+- treinos gerados
+- revisão do treinador
+- publicação para o atleta
 
-## 3. Segmentos de prova multiesporte
-A documentação mostra duas estruturas possíveis:
-
-### Opção A
-`public.target_race_segments`
-Campos esperados:
-- `target_race_id`
-- `activity_type_id`
-- `distance_meters`
-- `segment_order`
-
-### Opção B
-`public.race_segments`
-Campos esperados:
-- `target_race_id`
-- `activity_type_id`
-- `distance_meters`
-- `segment_order`
-
-Uso no sistema:
-- detalhamento por atividade em provas multiesporte
-- exemplo: swimrun com corrida + natação
-
----
-
-## 4. Tabela `public.prescribed_workouts`
-Uso no sistema:
-- armazenar treinos gerados
-- permitir revisão pelo treinador
-- controlar publicação para o atleta
-
-Fluxo:
-- `pending` → revisão
-- `published` → visível para o atleta
-
----
-
-## 5. Função de geração
-Função principal:
+### Função principal do motor
 - `public.path_b_generate_plan(...)`
 
 Estado atual:
 - gera por uma prova por execução
-- ainda não considera o calendário inteiro do atleta
-
----
-
-## 6. Base de periodização
-Tabela:
-- `public.knowledge_base_periodization`
-
-Uso:
-- semanas recomendadas
-- parâmetros de volume
-- apoio à definição da lógica de fase
-
----
-
-## 7. Observação estratégica
-O frontend deve sempre refletir o backend documentado.
-Evitar decisões por suposição quando o schema já estiver disponível.
+- ainda não é calendar-aware
