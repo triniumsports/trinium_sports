@@ -1,5 +1,3 @@
-import 'dart:convert';
-
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -28,11 +26,11 @@ class _CoachAthleteWorkoutsReviewScreenState
   String? _msg;
   String _statusFilter = 'pending';
 
-  List<Map<String, dynamic>> _allWorkouts = [];
-  List<Map<String, dynamic>> _filteredWorkouts = [];
+  Map<String, dynamic>? _athlete;
   List<Map<String, dynamic>> _targetRaces = [];
   Map<int, List<Map<String, dynamic>>> _segmentsByRaceId = {};
-  Map<String, dynamic>? _athlete;
+  List<Map<String, dynamic>> _allWorkouts = [];
+  List<Map<String, dynamic>> _filteredWorkouts = [];
   Map<String, dynamic> _periodizationByCategory = {};
 
   @override
@@ -40,6 +38,23 @@ class _CoachAthleteWorkoutsReviewScreenState
     super.initState();
     _load();
   }
+
+  String _s(dynamic v) => v == null ? '' : v.toString().trim();
+
+  DateTime? _d(dynamic v) {
+    final s = _s(v);
+    if (s.isEmpty) return null;
+    return DateTime.tryParse(s);
+  }
+
+  num _n(dynamic v) => v is num ? v : 0;
+
+  String _dateText(dynamic v) {
+    final s = _s(v);
+    return s.length >= 10 ? s.substring(0, 10) : s;
+  }
+
+  String _formatHours(num totalSec) => '${(totalSec / 3600).toStringAsFixed(1)}h';
 
   Future<void> _load() async {
     setState(() {
@@ -50,7 +65,7 @@ class _CoachAthleteWorkoutsReviewScreenState
     try {
       await Future.wait([
         _loadAthlete(),
-        _loadTargetRacesAndSegments(),
+        _loadRacesAndSegments(),
         _loadWorkouts(),
       ]);
       await _loadPeriodizationKnowledge();
@@ -65,17 +80,24 @@ class _CoachAthleteWorkoutsReviewScreenState
   Future<void> _loadAthlete() async {
     final athlete = await _client
         .from('athletes')
-        .select('*')
+        .select(
+          'id, birth_date, gender, height_cm, weight_kg, '
+          'experience_level, resting_hr, max_hr, vo2_max, '
+          'garmin_connected, fitness_level, phase'
+        )
         .eq('id', widget.athleteId)
         .maybeSingle();
 
     _athlete = athlete == null ? null : Map<String, dynamic>.from(athlete);
   }
 
-  Future<void> _loadTargetRacesAndSegments() async {
+  Future<void> _loadRacesAndSegments() async {
     final races = await _client
         .from('target_races')
-        .select('*')
+        .select(
+          'id, athlete_id, activity_type_id, name, race_date, distance_meters, '
+          'elevation_gain_m, priority, status, calculated_race_category_id'
+        )
         .eq('athlete_id', widget.athleteId)
         .order('race_date', ascending: true);
 
@@ -93,13 +115,13 @@ class _CoachAthleteWorkoutsReviewScreenState
     final inValues = '(${raceIds.join(',')})';
 
     try {
-      final segments = await _client
-          .from('race_segments')
-          .select('*')
+      final segs = await _client
+          .from('target_race_segments')
+          .select('target_race_id, activity_type_id, distance_meters, segment_order')
           .filter('target_race_id', 'in', inValues)
           .order('segment_order', ascending: true);
 
-      for (final row in (segments as List).cast<Map<String, dynamic>>()) {
+      for (final row in (segs as List).cast<Map<String, dynamic>>()) {
         final raceId = row['target_race_id'];
         if (raceId is int) {
           _segmentsByRaceId.putIfAbsent(raceId, () => []);
@@ -107,7 +129,23 @@ class _CoachAthleteWorkoutsReviewScreenState
         }
       }
     } catch (_) {
-      _segmentsByRaceId = {};
+      try {
+        final segs = await _client
+            .from('race_segments')
+            .select('target_race_id, activity_type_id, distance_meters, segment_order')
+            .filter('target_race_id', 'in', inValues)
+            .order('segment_order', ascending: true);
+
+        for (final row in (segs as List).cast<Map<String, dynamic>>()) {
+          final raceId = row['target_race_id'];
+          if (raceId is int) {
+            _segmentsByRaceId.putIfAbsent(raceId, () => []);
+            _segmentsByRaceId[raceId]!.add(row);
+          }
+        }
+      } catch (_) {
+        _segmentsByRaceId = {};
+      }
     }
   }
 
@@ -122,15 +160,15 @@ class _CoachAthleteWorkoutsReviewScreenState
   }
 
   Future<void> _loadPeriodizationKnowledge() async {
-    final fitnessLevel = _string(_athlete?['fitness_level']).isNotEmpty
-        ? _string(_athlete?['fitness_level'])
-        : _string(_athlete?['experience_level']);
+    final fitnessLevel = _s(_athlete?['fitness_level']).isNotEmpty
+        ? _s(_athlete?['fitness_level'])
+        : _s(_athlete?['experience_level']);
 
     _periodizationByCategory = {};
     if (fitnessLevel.isEmpty) return;
 
     final categories = _targetRaces
-        .map((r) => _string(r['calculated_race_category_id']))
+        .map((r) => _s(r['calculated_race_category_id']))
         .where((e) => e.isNotEmpty)
         .toSet()
         .toList();
@@ -147,7 +185,7 @@ class _CoachAthleteWorkoutsReviewScreenState
           .eq('fitness_level', fitnessLevel);
 
       for (final row in (rows as List).cast<Map<String, dynamic>>()) {
-        final category = _string(row['race_category']);
+        final category = _s(row['race_category']);
         if (category.isNotEmpty) {
           _periodizationByCategory[category] = row;
         }
@@ -164,25 +202,8 @@ class _CoachAthleteWorkoutsReviewScreenState
     }
 
     _filteredWorkouts = _allWorkouts
-        .where((w) => _string(w['validation_status']) == _statusFilter)
+        .where((w) => _s(w['validation_status']) == _statusFilter)
         .toList();
-  }
-
-  String _string(dynamic value) => value == null ? '' : value.toString().trim();
-
-  num _num(dynamic value) => value is num ? value : 0;
-
-  String _dateText(String raw) => raw.length >= 10 ? raw.substring(0, 10) : raw;
-
-  DateTime? _parseDate(dynamic raw) {
-    final text = _string(raw);
-    if (text.isEmpty) return null;
-    return DateTime.tryParse(text);
-  }
-
-  String _formatHours(num totalSec) {
-    final hours = totalSec / 3600.0;
-    return '${hours.toStringAsFixed(1)}h';
   }
 
   String _activityLabel(String raw) {
@@ -198,10 +219,10 @@ class _CoachAthleteWorkoutsReviewScreenState
   }
 
   String _workoutActivity(Map<String, dynamic> w) {
-    final direct = _string(w['activity_type_id']);
+    final direct = _s(w['activity_type_id']);
     if (direct.isNotEmpty) return direct;
 
-    final title = _string(w['title']).toLowerCase();
+    final title = _s(w['title']).toLowerCase();
     if (title.contains('swim') || title.contains('nata')) return 'swimming';
     if (title.contains('bike') || title.contains('cicl')) return 'cycling';
     if (title.contains('strength') || title.contains('força')) return 'strength';
@@ -212,7 +233,7 @@ class _CoachAthleteWorkoutsReviewScreenState
 
   Map<String, dynamic>? _mainRaceForWorkoutDate(DateTime workoutDate) {
     for (final race in _targetRaces) {
-      final raceDate = _parseDate(race['race_date']);
+      final raceDate = _d(race['race_date']);
       if (raceDate != null && !workoutDate.isAfter(raceDate)) {
         return race;
       }
@@ -221,17 +242,17 @@ class _CoachAthleteWorkoutsReviewScreenState
   }
 
   String _phaseOf(Map<String, dynamic> workout) {
-    final direct = _string(workout['periodization_phase']);
+    final direct = _s(workout['periodization_phase']);
     if (direct.isNotEmpty) return direct;
 
-    final scheduledDate = _parseDate(workout['scheduled_date']);
+    final scheduledDate = _d(workout['scheduled_date']);
     if (scheduledDate == null) return 'sem_fase';
 
     final race = _mainRaceForWorkoutDate(scheduledDate);
     if (race == null) return 'sem_fase';
 
-    final raceDate = _parseDate(race['race_date']);
-    final category = _string(race['calculated_race_category_id']);
+    final raceDate = _d(race['race_date']);
+    final category = _s(race['calculated_race_category_id']);
     if (raceDate == null || category.isEmpty) return 'sem_fase';
 
     final row = _periodizationByCategory[category];
@@ -268,7 +289,7 @@ class _CoachAthleteWorkoutsReviewScreenState
     final Map<String, num> phaseHours = {};
 
     for (final w in _allWorkouts) {
-      final status = _string(w['validation_status']);
+      final status = _s(w['validation_status']);
       final duration = _durationSec(w);
       final phase = _phaseOf(w);
 
@@ -303,13 +324,11 @@ class _CoachAthleteWorkoutsReviewScreenState
 
     for (final race in _targetRaces) {
       final raceId = race['id'];
-      if (raceId is int) {
-        summary[raceId] = {};
-      }
+      if (raceId is int) summary[raceId] = {};
     }
 
     for (final w in _allWorkouts) {
-      final scheduledDate = _parseDate(w['scheduled_date']);
+      final scheduledDate = _d(w['scheduled_date']);
       if (scheduledDate == null) continue;
 
       final race = _mainRaceForWorkoutDate(scheduledDate);
@@ -333,7 +352,7 @@ class _CoachAthleteWorkoutsReviewScreenState
     final Map<String, Map<String, dynamic>> weekMap = {};
 
     for (final w in _allWorkouts) {
-      final date = _string(w['scheduled_date']);
+      final date = _s(w['scheduled_date']);
       final week = _weekKey(date);
       final phase = _phaseOf(w);
       final activity = _activityLabel(_workoutActivity(w));
@@ -352,7 +371,7 @@ class _CoachAthleteWorkoutsReviewScreenState
       });
 
       weekMap[week]!['phase'] =
-          _string(weekMap[week]!['phase']).isEmpty ? phase : weekMap[week]!['phase'];
+          _s(weekMap[week]!['phase']).isEmpty ? phase : weekMap[week]!['phase'];
 
       weekMap[week]!['total_sessions'] =
           (weekMap[week]!['total_sessions'] as int) + 1;
@@ -368,7 +387,7 @@ class _CoachAthleteWorkoutsReviewScreenState
     }
 
     for (final race in _targetRaces) {
-      final date = _string(race['race_date']);
+      final date = _s(race['race_date']);
       final week = _weekKey(date);
 
       weekMap.putIfAbsent(week, () {
@@ -385,18 +404,18 @@ class _CoachAthleteWorkoutsReviewScreenState
 
       final races = weekMap[week]!['target_races'] as List<String>;
       final raceName = _raceDisplayName(race);
-      final priority = _string(race['priority']);
+      final priority = _s(race['priority']);
       races.add(priority.isEmpty ? raceName : '$raceName ($priority)');
     }
 
     final list = weekMap.values.map((e) => Map<String, dynamic>.from(e)).toList()
-      ..sort((a, b) => _string(a['week']).compareTo(_string(b['week'])));
+      ..sort((a, b) => _s(a['week']).compareTo(_s(b['week'])));
 
     return list;
   }
 
   String _weekKey(String rawDate) {
-    final dt = _parseDate(rawDate);
+    final dt = _d(rawDate);
     if (dt == null) return rawDate;
     final monday = dt.subtract(Duration(days: dt.weekday - 1));
     final y = monday.year.toString().padLeft(4, '0');
@@ -406,31 +425,10 @@ class _CoachAthleteWorkoutsReviewScreenState
   }
 
   String _raceDisplayName(Map<String, dynamic> race) {
-    final name = _string(race['name']);
+    final name = _s(race['name']);
     if (name.isNotEmpty) return name;
-    final distance = _string(race['distance_meters']);
+    final distance = _s(race['distance_meters']);
     return distance.isEmpty ? 'Prova alvo' : 'Prova ${distance}m';
-  }
-
-  List<Map<String, dynamic>> _fallbackSegmentsFromNotes(Map<String, dynamic> race) {
-    final notes = race['notes'];
-    if (notes == null) return [];
-
-    try {
-      final text = notes.toString();
-      if (text.trim().isEmpty) return [];
-      final decoded = jsonDecode(text);
-
-      if (decoded is Map && decoded['splits'] is List) {
-        final splits = decoded['splits'] as List;
-        return splits
-            .whereType<Map>()
-            .map((e) => Map<String, dynamic>.from(e))
-            .toList();
-      }
-    } catch (_) {}
-
-    return [];
   }
 
   Future<void> _openWorkout(int workoutId) async {
@@ -481,9 +479,6 @@ class _CoachAthleteWorkoutsReviewScreenState
       case 'pending':
         color = Colors.orange;
         break;
-      case 'rejected':
-        color = Colors.red;
-        break;
       default:
         color = Colors.blueGrey;
     }
@@ -496,11 +491,7 @@ class _CoachAthleteWorkoutsReviewScreenState
       ),
       child: Text(
         status,
-        style: TextStyle(
-          color: color,
-          fontWeight: FontWeight.w700,
-          fontSize: 12,
-        ),
+        style: TextStyle(color: color, fontWeight: FontWeight.w700, fontSize: 12),
       ),
     );
   }
@@ -517,11 +508,7 @@ class _CoachAthleteWorkoutsReviewScreenState
         borderRadius: BorderRadius.circular(16),
         color: Colors.white,
         boxShadow: const [
-          BoxShadow(
-            blurRadius: 12,
-            offset: Offset(0, 6),
-            color: Color(0x12000000),
-          ),
+          BoxShadow(blurRadius: 12, offset: Offset(0, 6), color: Color(0x12000000)),
         ],
       ),
       child: Row(
@@ -534,22 +521,9 @@ class _CoachAthleteWorkoutsReviewScreenState
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  title,
-                  style: const TextStyle(
-                    fontSize: 12,
-                    color: Colors.black54,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
+                Text(title, style: const TextStyle(fontSize: 12, color: Colors.black54, fontWeight: FontWeight.w600)),
                 const SizedBox(height: 4),
-                Text(
-                  value,
-                  style: const TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
+                Text(value, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
               ],
             ),
           ),
@@ -569,20 +543,13 @@ class _CoachAthleteWorkoutsReviewScreenState
         borderRadius: BorderRadius.circular(18),
         color: Colors.white,
         boxShadow: const [
-          BoxShadow(
-            blurRadius: 14,
-            offset: Offset(0, 6),
-            color: Color(0x12000000),
-          ),
+          BoxShadow(blurRadius: 14, offset: Offset(0, 6), color: Color(0x12000000)),
         ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            title,
-            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
-          ),
+          Text(title, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
           const SizedBox(height: 12),
           child,
         ],
@@ -591,17 +558,17 @@ class _CoachAthleteWorkoutsReviewScreenState
   }
 
   Widget _buildAthleteContextSection() {
-    final weight = _string(_athlete?['weight_kg']);
-    final height = _string(_athlete?['height_cm']);
-    final level = _string(_athlete?['experience_level']).isNotEmpty
-        ? _string(_athlete?['experience_level'])
-        : _string(_athlete?['fitness_level']);
-    final gender = _string(_athlete?['gender']);
-    final maxHr = _string(_athlete?['max_hr']);
-    final restHr = _string(_athlete?['resting_hr']);
-    final vo2 = _string(_athlete?['vo2_max']);
-    final comorbidity = _string(_athlete?['comorbidities']);
-    final restrictions = _string(_athlete?['restrictions']);
+    final birthDate = _dateText(_s(_athlete?['birth_date']));
+    final weight = _s(_athlete?['weight_kg']);
+    final height = _s(_athlete?['height_cm']);
+    final level = _s(_athlete?['experience_level']);
+    final gender = _s(_athlete?['gender']);
+    final maxHr = _s(_athlete?['max_hr']);
+    final restHr = _s(_athlete?['resting_hr']);
+    final vo2 = _s(_athlete?['vo2_max']);
+    final fitness = _s(_athlete?['fitness_level']);
+    final phase = _s(_athlete?['phase']);
+    final garmin = _athlete?['garmin_connected'] == true ? 'Sim' : 'Não';
 
     return _sectionContainer(
       title: 'Contexto do atleta',
@@ -609,15 +576,17 @@ class _CoachAthleteWorkoutsReviewScreenState
         spacing: 12,
         runSpacing: 12,
         children: [
+          _metricCard(title: 'Nascimento', value: birthDate.isEmpty ? '-' : birthDate, icon: Icons.cake),
           _metricCard(title: 'Peso', value: weight.isEmpty ? '-' : '$weight kg', icon: Icons.monitor_weight),
           _metricCard(title: 'Altura', value: height.isEmpty ? '-' : '$height cm', icon: Icons.height),
           _metricCard(title: 'Nível', value: level.isEmpty ? '-' : level, icon: Icons.speed),
-          _metricCard(title: 'VO2', value: vo2.isEmpty ? '-' : vo2, icon: Icons.favorite),
+          _metricCard(title: 'VO2 máx', value: vo2.isEmpty ? '-' : vo2, icon: Icons.favorite),
           _metricCard(title: 'FC repouso', value: restHr.isEmpty ? '-' : restHr, icon: Icons.monitor_heart),
           _metricCard(title: 'FC máxima', value: maxHr.isEmpty ? '-' : maxHr, icon: Icons.bolt),
           _metricCard(title: 'Gênero', value: gender.isEmpty ? '-' : gender, icon: Icons.person),
-          _metricCard(title: 'Comorbidades', value: comorbidity.isEmpty ? '-' : comorbidity, icon: Icons.medical_information),
-          _metricCard(title: 'Restrições', value: restrictions.isEmpty ? '-' : restrictions, icon: Icons.warning_amber),
+          _metricCard(title: 'Fitness level', value: fitness.isEmpty ? '-' : fitness, icon: Icons.insights),
+          _metricCard(title: 'Fase atual', value: phase.isEmpty ? '-' : phase, icon: Icons.timeline),
+          _metricCard(title: 'Garmin conectado', value: garmin, icon: Icons.watch),
         ],
       ),
     );
@@ -636,22 +605,15 @@ class _CoachAthleteWorkoutsReviewScreenState
       child: Column(
         children: _targetRaces.map((race) {
           final raceId = race['id'];
-          final raceDate = _dateText(_string(race['race_date']));
-          final distance = _string(race['distance_meters']);
-          final priority = _string(race['priority']);
-          final category = _string(race['calculated_race_category_id']);
-          final activity = _string(race['activity_type_id']);
-          final status = _string(race['status']);
+          final raceDate = _dateText(_s(race['race_date']));
+          final distance = _s(race['distance_meters']);
+          final priority = _s(race['priority']);
+          final category = _s(race['calculated_race_category_id']);
+          final activity = _s(race['activity_type_id']);
+          final status = _s(race['status']);
           final raceName = _raceDisplayName(race);
-          final altimetry = _string(race['elevation_gain_m']);
-
-          var segments = <Map<String, dynamic>>[];
-          if (raceId is int) {
-            segments = _segmentsByRaceId[raceId] ?? [];
-          }
-          if (segments.isEmpty) {
-            segments = _fallbackSegmentsFromNotes(race);
-          }
+          final altimetry = _s(race['elevation_gain_m']);
+          final segments = raceId is int ? (_segmentsByRaceId[raceId] ?? []) : <Map<String, dynamic>>[];
 
           return Container(
             width: double.infinity,
@@ -664,10 +626,7 @@ class _CoachAthleteWorkoutsReviewScreenState
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  raceName,
-                  style: const TextStyle(fontWeight: FontWeight.w700),
-                ),
+                Text(raceName, style: const TextStyle(fontWeight: FontWeight.w700)),
                 const SizedBox(height: 8),
                 Wrap(
                   spacing: 12,
@@ -684,23 +643,14 @@ class _CoachAthleteWorkoutsReviewScreenState
                 ),
                 if (segments.isNotEmpty) ...[
                   const SizedBox(height: 10),
-                  const Text(
-                    'Distâncias por atividade',
-                    style: TextStyle(fontWeight: FontWeight.w600),
-                  ),
+                  const Text('Distâncias por atividade', style: TextStyle(fontWeight: FontWeight.w600)),
                   const SizedBox(height: 6),
                   Wrap(
                     spacing: 8,
                     runSpacing: 8,
                     children: segments.map((seg) {
-                      final segActivity = _activityLabel(
-                        _string(seg['activity_type_id']).isNotEmpty
-                            ? _string(seg['activity_type_id'])
-                            : _string(seg['segment_type']),
-                      );
-                      final segDistance = _string(seg['distance_meters']).isNotEmpty
-                          ? _string(seg['distance_meters'])
-                          : _string(seg['distance']);
+                      final segActivity = _activityLabel(_s(seg['activity_type_id']));
+                      final segDistance = _s(seg['distance_meters']);
                       return Container(
                         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                         decoration: BoxDecoration(
@@ -739,16 +689,13 @@ class _CoachAthleteWorkoutsReviewScreenState
               _metricCard(title: 'Total de treinos', value: '${s['total']}', icon: Icons.fitness_center),
               _metricCard(title: 'Pendentes', value: '${s['pending']}', icon: Icons.schedule),
               _metricCard(title: 'Publicados', value: '${s['published']}', icon: Icons.check_circle),
-              _metricCard(title: 'Carga total', value: _formatHours(_num(s['total_duration_sec'])), icon: Icons.timer),
+              _metricCard(title: 'Carga total', value: _formatHours(_n(s['total_duration_sec'])), icon: Icons.timer),
               _metricCard(title: 'Carga máx. por fase', value: _formatHours(maxPhase), icon: Icons.trending_up),
               _metricCard(title: 'Carga mín. por fase', value: _formatHours(minPhase), icon: Icons.trending_down),
             ],
           ),
           const SizedBox(height: 18),
-          const Text(
-            'Distribuição de carga horária por fase da periodização',
-            style: TextStyle(fontWeight: FontWeight.w700),
-          ),
+          const Text('Distribuição de carga horária por fase da periodização', style: TextStyle(fontWeight: FontWeight.w700)),
           const SizedBox(height: 10),
           if (phaseHours.isEmpty)
             const Text('Sem dados de fase disponíveis.')
@@ -801,10 +748,7 @@ class _CoachAthleteWorkoutsReviewScreenState
               );
             }),
           const SizedBox(height: 18),
-          const Text(
-            'Distribuição por fase e atividade dentro de cada prova alvo',
-            style: TextStyle(fontWeight: FontWeight.w700),
-          ),
+          const Text('Distribuição por fase e atividade dentro de cada prova alvo', style: TextStyle(fontWeight: FontWeight.w700)),
           const SizedBox(height: 10),
           if (phaseByRace.isEmpty)
             const Text('Sem dados por prova alvo.')
@@ -814,7 +758,7 @@ class _CoachAthleteWorkoutsReviewScreenState
               if (raceId is! int) return const SizedBox.shrink();
 
               final raceName = _raceDisplayName(race);
-              final raceDate = _dateText(_string(race['race_date']));
+              final raceDate = _dateText(_s(race['race_date']));
               final phaseMap = phaseByRace[raceId] ?? {};
 
               return Container(
@@ -828,10 +772,7 @@ class _CoachAthleteWorkoutsReviewScreenState
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      '$raceName • $raceDate',
-                      style: const TextStyle(fontWeight: FontWeight.w700),
-                    ),
+                    Text('$raceName • $raceDate', style: const TextStyle(fontWeight: FontWeight.w700)),
                     const SizedBox(height: 8),
                     if (phaseMap.isEmpty)
                       const Text('Sem carga atribuída a esta prova.')
@@ -845,10 +786,7 @@ class _CoachAthleteWorkoutsReviewScreenState
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text(
-                                phase,
-                                style: const TextStyle(fontWeight: FontWeight.w600),
-                              ),
+                              Text(phase, style: const TextStyle(fontWeight: FontWeight.w600)),
                               const SizedBox(height: 4),
                               Wrap(
                                 spacing: 8,
@@ -890,10 +828,10 @@ class _CoachAthleteWorkoutsReviewScreenState
       title: 'Resumo semanal',
       child: Column(
         children: weeks.map((week) {
-          final weekKey = _string(week['week']);
-          final phase = _string(week['phase']);
-          final totalSessions = _string(week['total_sessions']);
-          final totalDuration = _formatHours(_num(week['total_duration_sec']));
+          final weekKey = _s(week['week']);
+          final phase = _s(week['phase']);
+          final totalSessions = _s(week['total_sessions']);
+          final totalDuration = _formatHours(_n(week['total_duration_sec']));
           final activityCounts = week['activity_counts'] as Map<String, int>;
           final activityDurations = week['activity_duration_sec'] as Map<String, num>;
           final targetRaces = week['target_races'] as List<String>;
@@ -1015,11 +953,7 @@ class _CoachAthleteWorkoutsReviewScreenState
           if (_msg != null)
             Padding(
               padding: const EdgeInsets.all(12),
-              child: Text(
-                _msg!,
-                textAlign: TextAlign.center,
-                style: const TextStyle(color: Colors.red),
-              ),
+              child: Text(_msg!, textAlign: TextAlign.center, style: const TextStyle(color: Colors.red)),
             ),
           Expanded(
             child: ListView(
@@ -1036,12 +970,12 @@ class _CoachAthleteWorkoutsReviewScreenState
                       : Column(
                           children: _filteredWorkouts.map((w) {
                             final workoutId = w['id'] as int;
-                            final title = _string(w['title']).isEmpty ? 'Treino' : _string(w['title']);
-                            final date = _dateText(_string(w['scheduled_date']));
-                            final validationStatus = _string(w['validation_status']);
-                            final timeSlot = _string(w['time_slot']);
-                            final plannedRpe = _string(w['planned_rpe']);
-                            final description = _string(w['description']);
+                            final title = _s(w['title']).isEmpty ? 'Treino' : _s(w['title']);
+                            final date = _dateText(_s(w['scheduled_date']));
+                            final validationStatus = _s(w['validation_status']);
+                            final timeSlot = _s(w['time_slot']);
+                            final plannedRpe = _s(w['planned_rpe']);
+                            final description = _s(w['description']);
 
                             return Card(
                               child: Padding(
@@ -1055,10 +989,7 @@ class _CoachAthleteWorkoutsReviewScreenState
                                         Expanded(
                                           child: Text(
                                             title,
-                                            style: const TextStyle(
-                                              fontWeight: FontWeight.w700,
-                                              fontSize: 16,
-                                            ),
+                                            style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
                                           ),
                                         ),
                                         _statusChip(validationStatus),
