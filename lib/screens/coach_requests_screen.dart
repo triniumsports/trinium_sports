@@ -91,7 +91,7 @@ class _CoachRequestsScreenState extends State<CoachRequestsScreen>
         final races = await _client
             .from('target_races')
             .select(
-              'id, athlete_id, race_date, status, distance_meters, priority, event_name',
+              'id, athlete_id, race_date, status, distance_meters, priority, calculated_race_category_id, activity_type_id',
             )
             .filter('athlete_id', 'in', inValues)
             .eq('status', 'planned')
@@ -107,8 +107,7 @@ class _CoachRequestsScreenState extends State<CoachRequestsScreen>
         final workouts = await _client
             .from('prescribed_workouts')
             .select('athlete_id, validation_status')
-            .filter('athlete_id', 'in', inValues)
-            .eq('coach_id', user.id);
+            .filter('athlete_id', 'in', inValues);
 
         final countMap = <String, Map<String, int>>{};
         for (final row in (workouts as List).cast<Map<String, dynamic>>()) {
@@ -319,13 +318,24 @@ class _CoachRequestsScreenState extends State<CoachRequestsScreen>
     final race = _mainRaceByAthleteId[athleteId];
     if (race == null) return 'Sem prova alvo planejada';
 
-    final name = (race['event_name'] ?? 'Prova alvo').toString();
     final date = (race['race_date'] ?? '').toString();
     final distance = (race['distance_meters'] ?? '').toString();
     final priority = (race['priority'] ?? '').toString();
+    final category = (race['calculated_race_category_id'] ?? '').toString();
+    final activity = (race['activity_type_id'] ?? '').toString();
 
     final dateText = date.length >= 10 ? date.substring(0, 10) : date;
-    return '$name • $dateText • ${distance}m${priority.isNotEmpty ? ' • prioridade $priority' : ''}';
+
+    final parts = <String>[
+      'Prova alvo',
+      if (dateText.isNotEmpty) dateText,
+      if (distance.isNotEmpty) '${distance}m',
+      if (priority.isNotEmpty) 'prioridade $priority',
+      if (category.isNotEmpty) 'cat $category',
+      if (activity.isNotEmpty) 'atividade $activity',
+    ];
+
+    return parts.join(' • ');
   }
 
   Widget _countChip(String label, int value, Color color) {
