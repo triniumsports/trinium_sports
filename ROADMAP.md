@@ -20,3 +20,8 @@ Fechamento da documentação de continuidade + preparação para evolução do m
 - [ ] editar distância
 - [ ] editar zona
 - [ ] editar observações
+
+### Disponibilidade real do atleta
+- [ ] evoluir `weekly_constraints` com slot e duração
+- [ ] criar tela de edição da disponibilidade semanal
+- [ ] conectar o motor à disponibilidade real do atleta

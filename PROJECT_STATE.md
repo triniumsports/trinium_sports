@@ -29,3 +29,10 @@ TRINIUM SPORTS
 
 ## Próxima etapa prioritária
 Evoluir o motor de geração para considerar o calendário completo do atleta.
+
+## Nova direção confirmada
+O motor deverá usar a disponibilidade real do atleta, modelada em `weekly_constraints`, incluindo:
+- até 2 opções por dia
+- modalidade por slot
+- duração disponível
+- possibilidade de dupla sessão
