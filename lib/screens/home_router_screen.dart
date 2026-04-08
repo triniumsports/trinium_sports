@@ -9,6 +9,7 @@ import 'athlete_search_professionals_screen.dart';
 import 'auth_gate.dart';
 import 'coach_requests_screen.dart';
 import 'professional_profile_form_screen.dart';
+import 'athlete_weekly_availability_edit_screen.dart';
 
 class HomeRouterScreen extends StatefulWidget {
   const HomeRouterScreen({super.key});
