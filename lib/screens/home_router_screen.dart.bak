@@ -214,7 +214,6 @@ class BaseHomeScaffold extends StatelessWidget {
   }
 }
 
-
 class AthleteHomeScreen extends StatelessWidget {
   final String fullName;
 
@@ -222,193 +221,31 @@ class AthleteHomeScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xFFF4F6FA),
-      appBar: AppBar(
-        title: const Text('Home do Atleta'),
-        actions: [
-          TextButton(
-            onPressed: () async {
-              await Supabase.instance.client.auth.signOut();
-            },
-            child: const Text('Sair'),
-          ),
-        ],
-      ),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(18),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(18),
-              color: Colors.white,
-              boxShadow: const [
-                BoxShadow(
-                  blurRadius: 12,
-                  offset: Offset(0, 6),
-                  color: Color(0x12000000),
-                ),
-              ],
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Olá, $fullName',
-                  style: const TextStyle(
-                    fontSize: 22,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                const Text(
-                  'Organize sua jornada esportiva, atualize sua disponibilidade e acompanhe os treinos publicados pelo seu treinador.',
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 16),
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(18),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(18),
-              color: Colors.white,
-              boxShadow: const [
-                BoxShadow(
-                  blurRadius: 12,
-                  offset: Offset(0, 6),
-                  color: Color(0x12000000),
-                ),
-              ],
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Disponibilidade semanal',
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                const Text(
-                  'Edite os dias, modalidades e o tempo disponível para que o motor gere treinos mais aderentes à sua rotina.',
-                ),
-                const SizedBox(height: 12),
-                FilledButton.tonal(
-                  onPressed: () {
-                    Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder: (_) => const AthleteWeeklyAvailabilityEditScreen(),
-                      ),
-                    );
-                  },
-                  child: const Text('Editar disponibilidade semanal'),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 16),
-          Wrap(
-            spacing: 12,
-            runSpacing: 12,
-            children: [
-              SizedBox(
-                width: 300,
-                child: Container(
-                  padding: const EdgeInsets.all(18),
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(18),
-                    color: Colors.white,
-                    boxShadow: const [
-                      BoxShadow(
-                        blurRadius: 12,
-                        offset: Offset(0, 6),
-                        color: Color(0x12000000),
-                      ),
-                    ],
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'Marketplace',
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      const Text(
-                        'Busque treinadores e profissionais para compor sua jornada esportiva.',
-                      ),
-                      const SizedBox(height: 12),
-                      FilledButton(
-                        onPressed: () {
-                          Navigator.of(context).push(
-                            MaterialPageRoute(
-                              builder: (_) => const AthleteSearchProfessionalsScreen(),
-                            ),
-                          );
-                        },
-                        child: const Text('Buscar profissionais'),
-                      ),
-                    ],
-                  ),
-                ),
+    return BaseHomeScaffold(
+      title: 'Home do Atleta',
+      message: 'Bem-vindo, $fullName\n\nSeu perfil de atleta está ativo.',
+      actions: [
+        FilledButton(
+          onPressed: () {
+            Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => const AthleteSearchProfessionalsScreen(),
               ),
-              SizedBox(
-                width: 300,
-                child: Container(
-                  padding: const EdgeInsets.all(18),
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(18),
-                    color: Colors.white,
-                    boxShadow: const [
-                      BoxShadow(
-                        blurRadius: 12,
-                        offset: Offset(0, 6),
-                        color: Color(0x12000000),
-                      ),
-                    ],
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'Treinos publicados',
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      const Text(
-                        'Visualize os treinos aprovados e publicados para você.',
-                      ),
-                      const SizedBox(height: 12),
-                      FilledButton(
-                        onPressed: () {
-                          Navigator.of(context).push(
-                            MaterialPageRoute(
-                              builder: (_) => const AthleteApprovedWorkoutsScreen(),
-                            ),
-                          );
-                        },
-                        child: const Text('Ver treinos aprovados'),
-                      ),
-                    ],
-                  ),
-                ),
+            );
+          },
+          child: const Text('Buscar profissionais'),
+        ),
+        FilledButton.tonal(
+          onPressed: () {
+            Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => const AthleteApprovedWorkoutsScreen(),
               ),
-            ],
-          ),
-        ],
-      ),
+            );
+          },
+          child: const Text('Treinos aprovados'),
+        ),
+      ],
     );
   }
 }
