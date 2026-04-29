@@ -357,3 +357,140 @@ A ideia é que, progressivamente, cada bloco aqui documentado possa ser vinculad
 O Método Trinium precisa ser defensável não apenas como software, mas como sistema técnico de apoio à prescrição. Para isso, a bibliografia não pode existir apenas como lista solta: ela precisa estar conectada ao método, aos parâmetros e à governança de evolução do produto.
 
 Este documento é o ponto de partida para essa trilha de validação.
+
+---
+
+## 11. Primeira bibliografia real priorizada
+
+### Referência 1
+**Título:** Effects of tapering on performance: a meta-analysis  
+**Autores:** Bosquet L, Montpetit J, Arvisais D, Mujika I  
+**Ano:** 2007  
+**Tipo de material:** Meta-análise  
+**Tema principal:** Redução de carga pré-prova  
+**Aplicação no Método Trinium:**  
+Base importante para justificar parâmetros de redução de carga pré-prova, especialmente duração do taper e redução progressiva de volume em atletas de endurance.  
+**Tabelas potencialmente impactadas:**  
+- `knowledge_base_race_impact_profiles`  
+- `phase_volume_targets`  
+- `knowledge_base_periodization`  
+**Status atual no método:** baseado em literatura  
+**Observações:** A meta-análise encontrou melhor efeito com aproximadamente duas semanas de taper e redução de volume na faixa de 41% a 60%, com manutenção relativa de intensidade e frequência.
+
+---
+
+### Referência 2
+**Título:** Intense training: the key to optimal performance before and during the taper  
+**Autores:** Mujika I  
+**Ano:** 2010  
+**Tipo de material:** Revisão / artigo conceitual  
+**Tema principal:** Redução de carga pré-prova e manutenção de intensidade  
+**Aplicação no Método Trinium:**  
+Ajuda a sustentar a lógica de que o taper não significa “parar de treinar”, mas reduzir fadiga preservando estímulos relevantes para a competição.  
+**Tabelas potencialmente impactadas:**  
+- `knowledge_base_race_impact_profiles`  
+- `phase_volume_targets`  
+- `session_rules`  
+**Status atual no método:** baseado em literatura  
+**Observações:** Reforça a ideia de redução de carga com preservação de prontidão competitiva.
+
+---
+
+### Referência 3
+**Título:** New horizons for the methodology and physiology of training periodization  
+**Autores:** Issurin VB  
+**Ano:** 2010  
+**Tipo de material:** Revisão  
+**Tema principal:** Periodização e organização por blocos  
+**Aplicação no Método Trinium:**  
+Base importante para sustentar a organização do ciclo em fases e a ideia de blocos dominantes no calendário.  
+**Tabelas potencialmente impactadas:**  
+- `knowledge_base_periodization`  
+- `phase_volume_targets`  
+- `knowledge_base_race_impact_profiles`  
+**Status atual no método:** baseado em literatura  
+**Observações:** Útil para justificar a lógica de organização do ciclo e a separação entre blocos com objetivos diferentes.
+
+---
+
+### Referência 4
+**Título:** Biological Background of Block Periodized Endurance Training: A Review  
+**Autores:** Issurin VB  
+**Ano:** 2019  
+**Tipo de material:** Revisão  
+**Tema principal:** Periodização em endurance  
+**Aplicação no Método Trinium:**  
+Apoia a lógica de blocos e a necessidade de estruturar objetivos fisiológicos específicos ao longo do ciclo.  
+**Tabelas potencialmente impactadas:**  
+- `knowledge_base_periodization`  
+- `phase_volume_targets`  
+- `knowledge_base_activity_requirements`  
+**Status atual no método:** baseado em literatura  
+**Observações:** Especialmente útil para sustentar a coerência do método em esportes de endurance.
+
+---
+
+### Referência 5
+**Título:** Monitoring Athlete Training Loads: Consensus Statement  
+**Autores:** Bourdon PC et al.  
+**Ano:** 2017  
+**Tipo de material:** Consenso  
+**Tema principal:** Monitoramento de carga  
+**Aplicação no Método Trinium:**  
+Base importante para justificar o uso de parâmetros de carga, necessidade de monitoramento e relação entre prescrição, fadiga e ajuste operacional.  
+**Tabelas potencialmente impactadas:**  
+- `knowledge_base_risk_matrix`  
+- `knowledge_base_activity_requirements`  
+- `coach_feasibility_reports`  
+**Status atual no método:** baseado em literatura  
+**Observações:** Útil para justificar por que o sistema separa prescrição ideal, viabilidade e revisão do treinador.
+
+---
+
+### Referência 6
+**Título:** How much is too much? (Part 1) International Olympic Committee consensus statement on load in sport and risk of injury  
+**Autores:** Soligard T et al.  
+**Ano:** 2016  
+**Tipo de material:** Consenso  
+**Tema principal:** Carga e risco de lesão  
+**Aplicação no Método Trinium:**  
+Base central para sustentar fatores de segurança, governança de carga e preocupação com risco em função da exposição esportiva.  
+**Tabelas potencialmente impactadas:**  
+- `knowledge_base_risk_matrix`  
+- `knowledge_base_race_impact_profiles`  
+- `knowledge_base_activity_requirements`  
+**Status atual no método:** baseado em literatura  
+**Observações:** Muito útil para a defesa técnica da necessidade de modular carga e risco no motor.
+
+---
+
+### Referência 7
+**Título:** How much is too much? (Part 2) International Olympic Committee consensus statement on load in sport and risk of illness  
+**Autores:** Schwellnus M et al.  
+**Ano:** 2016  
+**Tipo de material:** Consenso  
+**Tema principal:** Carga, fadiga e risco sistêmico  
+**Aplicação no Método Trinium:**  
+Complementa a base de risco, especialmente para suportar o racional de fadiga acumulada e custo competitivo das provas no calendário.  
+**Tabelas potencialmente impactadas:**  
+- `knowledge_base_risk_matrix`  
+- `knowledge_base_race_impact_profiles`  
+**Status atual no método:** baseado em literatura  
+**Observações:** Útil para discutir o custo fisiológico e a disrupção do calendário competitivo.
+
+---
+
+### Referência 8
+**Título:** Training principles and issues for ultra-endurance athletes  
+**Autores:** Zaryski C, Smith DJ  
+**Ano:** 2005  
+**Tipo de material:** Revisão  
+**Tema principal:** Especificidade, tolerância estrutural e endurance prolongado  
+**Aplicação no Método Trinium:**  
+Ajuda a sustentar a importância da especificidade, da tolerância à carga repetitiva e da individualização em esportes de endurance prolongado.  
+**Tabelas potencialmente impactadas:**  
+- `knowledge_base_periodization`  
+- `knowledge_base_activity_requirements`  
+- `knowledge_base_risk_matrix`  
+**Status atual no método:** baseado em literatura  
+**Observações:** Especialmente útil para categorias mais longas, como ultra trail e provas longas de endurance.
