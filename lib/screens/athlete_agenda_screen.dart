@@ -1,8 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-import 'athlete_recommended_screen.dart';
-
 class AthleteAgendaScreen extends StatefulWidget {
   const AthleteAgendaScreen({super.key});
 
@@ -11,68 +9,37 @@ class AthleteAgendaScreen extends StatefulWidget {
 }
 
 class _AthleteAgendaScreenState extends State<AthleteAgendaScreen> {
-  final _client = Supabase.instance.client;
+  final SupabaseClient _client = Supabase.instance.client;
 
   bool _loading = true;
-  bool _saving = false;
   String? _msg;
 
-  // A) Weekly Constraints
-  // day_of_week: 1..7 (Seg..Dom)
-  // time_slot: morning/afternoon/evening
-  final Map<String, Map<int, Set<String>>> _availability = {
-    'morning': {for (var d = 1; d <= 7; d++) d: <String>{}},
-    'afternoon': {for (var d = 1; d <= 7; d++) d: <String>{}},
-    'evening': {for (var d = 1; d <= 7; d++) d: <String>{}},
-  };
+  String _filter = 'all';
 
-  // B) Standard Week Pattern
-  int? _patternId;
-  final _patternTitleController = TextEditingController(text: 'Meu padrão semanal');
-  final List<_PatternSession> _sessions = [];
-
-  static const Map<int, String> dayLabels = {
-    1: 'Seg',
-    2: 'Ter',
-    3: 'Qua',
-    4: 'Qui',
-    5: 'Sex',
-    6: 'Sáb',
-    7: 'Dom',
-  };
-
-  static const Map<String, String> slotLabels = {
-    'morning': 'Manhã',
-    'afternoon': 'Tarde',
-    'evening': 'Noite',
-  };
-
-  // activity_type_id (backend)
-  static const Map<String, String> activityLabels = {
-    'running': 'Corrida (asfalto)',
-    'trail_running': 'Trail (trilha)',
-    'cycling': 'Ciclismo (road)',
-    'mtb': 'MTB',
-    'swimming': 'Natação (piscina)',
-    'open_water_swimming': 'Natação (águas abertas)',
-    'swimrun': 'Swimrun',
-    'triathlon': 'Triatlo',
-    'strength': 'Força / Musculação',
-  };
-
-  @override
-  void dispose() {
-    _patternTitleController.dispose();
-    super.dispose();
-  }
+  Map<String, dynamic>? _profile;
+  Map<String, dynamic>? _athlete;
+  List<Map<String, dynamic>> _workouts = [];
+  List<Map<String, dynamic>> _filteredWorkouts = [];
 
   @override
   void initState() {
     super.initState();
-    _loadExisting();
+    _load();
   }
 
-  Future<void> _loadExisting() async {
+  String _s(dynamic v) => v == null ? '' : v.toString().trim();
+
+  num _n(dynamic v) => v is num ? v : 0;
+
+  String _dateText(dynamic v) {
+    final s = _s(v);
+    return s.length >= 10 ? s.substring(0, 10) : s;
+  }
+
+  String _formatHours(num totalSec) =>
+      '${(totalSec / 3600).toStringAsFixed(1)}h';
+
+  Future<void> _load() async {
     final user = _client.auth.currentUser;
     if (user == null) {
       setState(() {
@@ -82,496 +49,562 @@ class _AthleteAgendaScreenState extends State<AthleteAgendaScreen> {
       return;
     }
 
+    setState(() {
+      _loading = true;
+      _msg = null;
+    });
+
     try {
-      // Carrega weekly_constraints existentes
-      final wc = await _client
-          .from('weekly_constraints')
-          .select('day_of_week, activity_type_id, time_slot')
-          .eq('athlete_id', user.id);
-
-      if (wc is List) {
-        for (final row in wc) {
-          final d = row['day_of_week'];
-          final a = (row['activity_type_id'] ?? '').toString();
-          final s = (row['time_slot'] ?? '').toString();
-          if (d is int && _availability.containsKey(s) && a.isNotEmpty) {
-            _availability[s]![d]!.add(a);
-          }
-        }
-      }
-
-      // Carrega padrão ativo (se existir)
-      final pattern = await _client
-          .from('standard_week_patterns')
-          .select('id,title,is_active')
-          .eq('athlete_id', user.id)
-          .eq('is_active', true)
-          .order('created_at', ascending: false)
+      final profile = await _client
+          .from('profiles')
+          .select('id, full_name, email, avatar_url')
+          .eq('id', user.id)
           .maybeSingle();
 
-      if (pattern != null) {
-        _patternId = pattern['id'] as int?;
-        _patternTitleController.text = (pattern['title'] ?? 'Meu padrão semanal').toString();
+      final athlete = await _client
+          .from('athletes')
+          .select(
+            'id, weight_kg, height_cm, experience_level, resting_hr, max_hr, vo2_max, fitness_level, garmin_connected',
+          )
+          .eq('id', user.id)
+          .maybeSingle();
 
-        if (_patternId != null) {
-          final sess = await _client
-              .from('standard_week_pattern_sessions')
-              .select('day_of_week, activity_type_id, duration_minutes, time_slot, session_order')
-              .eq('standard_week_pattern_id', _patternId!)
-              .order('day_of_week')
-              .order('session_order');
+      final workouts = await _client
+          .from('v_prescribed_workouts_mvp')
+          .select()
+          .eq('athlete_id', user.id)
+          .order('scheduled_date', ascending: true)
+          .order('created_at', ascending: true);
 
-          _sessions.clear();
-          if (sess is List) {
-            for (final r in sess) {
-              _sessions.add(_PatternSession(
-                dayOfWeek: (r['day_of_week'] ?? 1) as int,
-                timeSlot: (r['time_slot'] ?? 'morning').toString(),
-                activityTypeId: (r['activity_type_id'] ?? 'run').toString(),
-                durationMinutes: (r['duration_minutes'] ?? 45) as int,
-                sessionOrder: (r['session_order'] ?? 1) as int,
-              ));
-            }
-          }
-        }
-      }
+      _profile = profile == null ? null : Map<String, dynamic>.from(profile);
+      _athlete = athlete == null ? null : Map<String, dynamic>.from(athlete);
+      _workouts = (workouts as List).cast<Map<String, dynamic>>();
+
+      _applyFilter();
     } catch (e) {
       _msg = 'Erro ao carregar agenda: $e';
     } finally {
-      setState(() => _loading = false);
-    }
-  }
-
-  bool _hasAnyWeeklyConstraints() {
-    for (final slot in _availability.keys) {
-      for (var d = 1; d <= 7; d++) {
-        if (_availability[slot]![d]!.isNotEmpty) return true;
+      if (mounted) {
+        setState(() => _loading = false);
       }
     }
-    return false;
   }
 
-  bool _hasPatternSessions() => _sessions.isNotEmpty;
-
-  Future<void> _saveWeeklyConstraints() async {
-    final user = _client.auth.currentUser;
-    if (user == null) return;
-
-    if (!_hasAnyWeeklyConstraints()) {
-      setState(() => _msg = 'Preencha ao menos 1 disponibilidade em (A) Weekly Constraints.');
+  void _applyFilter() {
+    if (_filter == 'all') {
+      _filteredWorkouts = List<Map<String, dynamic>>.from(_workouts);
       return;
     }
 
-    setState(() {
-      _saving = true;
-      _msg = null;
-    });
+    _filteredWorkouts = _workouts.where((w) {
+      final status = _s(w['status']);
+      final validationStatus = _s(w['validation_status']);
 
-    try {
-      // Apaga constraints anteriores do atleta e recria (simples e consistente)
-      await _client.from('weekly_constraints').delete().eq('athlete_id', user.id);
-
-      final inserts = <Map<String, dynamic>>[];
-      for (final slot in _availability.keys) {
-        for (var d = 1; d <= 7; d++) {
-          for (final act in _availability[slot]![d]!) {
-            inserts.add({
-              'athlete_id': user.id,
-              'day_of_week': d,
-              'activity_type_id': act,
-              'time_slot': slot,
-              'is_locked': false,
-              'notes': null,
-            });
-          }
-        }
+      if (_filter == 'planned') {
+        return status == 'planned' ||
+            validationStatus == 'draft' ||
+            validationStatus == 'review' ||
+            validationStatus == 'approved';
       }
 
-      await _client.from('weekly_constraints').insert(inserts);
+      if (_filter == 'published') {
+        return status == 'published' || validationStatus == 'published';
+      }
 
-      setState(() => _msg = 'Disponibilidade (A) salva com sucesso ✅');
-    } catch (e) {
-      setState(() => _msg = 'Erro ao salvar (A): $e');
-    } finally {
-      setState(() => _saving = false);
-    }
+      if (_filter == 'completed') {
+        return status == 'completed';
+      }
+
+      return true;
+    }).toList();
   }
 
-  Future<void> _saveStandardWeekPattern() async {
-    final user = _client.auth.currentUser;
-    if (user == null) return;
+  String _activityLabel(String raw) {
+    final v = raw.toLowerCase();
+    if (v.contains('trail')) return 'Trail';
+    if (v.contains('run') || v.contains('corr')) return 'Corrida';
+    if (v.contains('swim') || v.contains('nata')) return 'Natação';
+    if (v.contains('bike') || v.contains('cicl')) return 'Ciclismo';
+    if (v.contains('strength') || v.contains('forca')) return 'Força';
+    if (v.contains('triathlon')) return 'Triathlon';
+    if (v.contains('rest')) return 'Descanso';
+    return raw.isEmpty ? 'Geral' : raw;
+  }
 
-    if (!_hasPatternSessions()) {
-      setState(() => _msg = 'Adicione ao menos 1 sessão no padrão (B).');
-      return;
+  Map<String, dynamic> _summary() {
+    int planned = 0;
+    int published = 0;
+    int completed = 0;
+    num totalDuration = 0;
+
+    final Map<String, int> byActivity = {};
+
+    for (final w in _workouts) {
+      final status = _s(w['status']);
+      final validationStatus = _s(w['validation_status']);
+      final duration = _n(w['planned_duration_sec']);
+      final activity = _activityLabel(_s(w['activity_type_id']));
+
+      if (status == 'planned' ||
+          validationStatus == 'draft' ||
+          validationStatus == 'review' ||
+          validationStatus == 'approved') {
+        planned++;
+      }
+
+      if (status == 'published' || validationStatus == 'published') {
+        published++;
+      }
+
+      if (status == 'completed') {
+        completed++;
+      }
+
+      totalDuration += duration;
+      byActivity[activity] = (byActivity[activity] ?? 0) + 1;
     }
 
-    setState(() {
-      _saving = true;
-      _msg = null;
-    });
+    return {
+      'planned': planned,
+      'published': published,
+      'completed': completed,
+      'total': _workouts.length,
+      'total_duration_sec': totalDuration,
+      'by_activity': byActivity,
+    };
+  }
 
+  Future<void> _markCompleted(int workoutId) async {
     try {
-      // Desativa padrões anteriores do atleta
-      await _client
-          .from('standard_week_patterns')
-          .update({'is_active': false})
-          .eq('athlete_id', user.id);
+      await _client.from('prescribed_workouts').update({
+        'status': 'completed',
+      }).eq('id', workoutId);
 
-      // Cria um novo padrão ativo
-      final created = await _client
-          .from('standard_week_patterns')
-          .insert({
-            'athlete_id': user.id,
-            'title': _patternTitleController.text.trim().isEmpty
-                ? 'Meu padrão semanal'
-                : _patternTitleController.text.trim(),
-            'is_active': true,
-          })
-          .select('id')
-          .single();
-
-      final patternId = created['id'] as int;
-      _patternId = patternId;
-
-      // Insere sessões
-      final inserts = _sessions.map((s) => s.toInsert(patternId)).toList();
-      await _client.from('standard_week_pattern_sessions').insert(inserts);
-
-      setState(() => _msg = 'Padrão (B) salvo com sucesso ✅');
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Treino marcado como concluído ✅')),
+      );
+      await _load();
     } catch (e) {
-      setState(() => _msg = 'Erro ao salvar (B): $e');
-    } finally {
-      setState(() => _saving = false);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Erro ao concluir treino: $e')),
+      );
     }
   }
 
-  Future<void> _continue() async {
-    // Para “fechar cadastro”, vamos exigir:
-    // - preencher A OU B (ou ambos)
-    final ok = _hasAnyWeeklyConstraints() || _hasPatternSessions();
-    if (!ok) {
-      setState(() => _msg = 'Para continuar, preencha (A) ou (B). Quanto mais completo, melhor o motor.');
-      return;
+  Widget _statusChip(String status) {
+    Color color;
+    switch (status) {
+      case 'published':
+        color = Colors.green;
+        break;
+      case 'completed':
+        color = Colors.blue;
+        break;
+      case 'planned':
+        color = Colors.orange;
+        break;
+      default:
+        color = Colors.blueGrey;
     }
 
-    if (!mounted) return;
-    Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => const AthleteRecommendedScreen()),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    if (_loading) {
-      return const Scaffold(body: Center(child: CircularProgressIndicator()));
-    }
-
-    return DefaultTabController(
-      length: 2,
-      child: Scaffold(
-        appBar: AppBar(
-          title: const Text('Agenda do Atleta (Obrigatório)'),
-          bottom: const TabBar(
-            tabs: [
-              Tab(text: 'A) Disponibilidade'),
-              Tab(text: 'B) Padrão semanal'),
-            ],
-          ),
-        ),
-        body: TabBarView(
-          children: [
-            // A) Weekly Constraints
-            Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                children: [
-                  const Text(
-                    'A) Weekly Constraints (recomendado)\n'
-                    'Informe em quais dias/turnos você consegue treinar e qual modalidade.\n'
-                    'Motivo: o Trinium encaixa as sessões na sua agenda real.',
-                    textAlign: TextAlign.center,
-                  ),
-                  const SizedBox(height: 12),
-                  Expanded(child: _WeeklyConstraintsGrid(
-                    availability: _availability,
-                    activityLabels: activityLabels,
-                    dayLabels: dayLabels,
-                    slotLabels: slotLabels,
-                    onToggle: (slot, day, activity) {
-                      setState(() {
-                        final set = _availability[slot]![day]!;
-                        if (set.contains(activity)) {
-                          set.remove(activity);
-                        } else {
-                          set.add(activity);
-                        }
-                      });
-                    },
-                  )),
-                  const SizedBox(height: 10),
-                  FilledButton(
-                    onPressed: _saving ? null : _saveWeeklyConstraints,
-                    child: Text(_saving ? 'Salvando...' : 'Salvar (A) Disponibilidade'),
-                  ),
-                ],
-              ),
-            ),
-
-            // B) Standard Week Pattern
-            Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                children: [
-                  const Text(
-                    'B) Standard Week Pattern (recomendado)\n'
-                    'Defina um “padrão de semana” com sessões e duração.\n'
-                    'Motivo: o Trinium gera semanas consistentes e ajusta carga com mais precisão.',
-                    textAlign: TextAlign.center,
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: _patternTitleController,
-                    decoration: const InputDecoration(
-                      labelText: 'Nome do padrão',
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  Expanded(
-                    child: _sessions.isEmpty
-                        ? const Center(child: Text('Nenhuma sessão adicionada ainda.'))
-                        : ListView.separated(
-                            itemCount: _sessions.length,
-                            separatorBuilder: (_, __) => const Divider(height: 1),
-                            itemBuilder: (context, i) {
-                              final s = _sessions[i];
-                              return ListTile(
-                                title: Text('${dayLabels[s.dayOfWeek]} • ${slotLabels[s.timeSlot]} • ${activityLabels[s.activityTypeId]}'),
-                                subtitle: Text('Duração: ${s.durationMinutes} min  | Ordem: ${s.sessionOrder}'),
-                                trailing: IconButton(
-                                  icon: const Icon(Icons.delete),
-                                  onPressed: () => setState(() => _sessions.removeAt(i)),
-                                ),
-                              );
-                            },
-                          ),
-                  ),
-                  const SizedBox(height: 12),
-                  OutlinedButton(
-                    onPressed: () async {
-                      final created = await showDialog<_PatternSession>(
-                        context: context,
-                        builder: (_) => _AddSessionDialog(activityLabels: activityLabels),
-                      );
-                      if (created != null) {
-                        setState(() => _sessions.add(created));
-                      }
-                    },
-                    child: const Text('Adicionar sessão'),
-                  ),
-                  const SizedBox(height: 10),
-                  FilledButton(
-                    onPressed: _saving ? null : _saveStandardWeekPattern,
-                    child: Text(_saving ? 'Salvando...' : 'Salvar (B) Padrão semanal'),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-        bottomNavigationBar: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (_msg != null) Text(_msg!, textAlign: TextAlign.center),
-              const SizedBox(height: 8),
-              FilledButton(
-                onPressed: _saving ? null : _continue,
-                child: const Text('Continuar (Recomendados)'),
-              ),
-            ],
-          ),
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(20),
+        color: color.withValues(alpha: 0.12),
+      ),
+      child: Text(
+        status,
+        style: TextStyle(
+          color: color,
+          fontWeight: FontWeight.w700,
+          fontSize: 12,
         ),
       ),
     );
   }
-}
 
-class _WeeklyConstraintsGrid extends StatelessWidget {
-  final Map<String, Map<int, Set<String>>> availability;
-  final Map<String, String> activityLabels;
-  final Map<int, String> dayLabels;
-  final Map<String, String> slotLabels;
-  final void Function(String slot, int day, String activity) onToggle;
-
-  const _WeeklyConstraintsGrid({
-    required this.availability,
-    required this.activityLabels,
-    required this.dayLabels,
-    required this.slotLabels,
-    required this.onToggle,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final slots = availability.keys.toList();
-
-    return ListView(
-      children: slots.map((slot) {
-        return Card(
-          child: Padding(
-            padding: const EdgeInsets.all(12),
+  Widget _metricCard({
+    required String title,
+    required String value,
+    IconData? icon,
+  }) {
+    return Container(
+      width: 220,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(16),
+        color: Colors.white,
+        boxShadow: const [
+          BoxShadow(
+            blurRadius: 12,
+            offset: Offset(0, 6),
+            color: Color(0x12000000),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          if (icon != null) ...[
+            Icon(icon, size: 20),
+            const SizedBox(width: 10),
+          ],
+          Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(slotLabels[slot] ?? slot, style: const TextStyle(fontWeight: FontWeight.bold)),
-                const SizedBox(height: 10),
-                ...dayLabels.entries.map((d) {
-                  final set = availability[slot]![d.key]!;
-                  return Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(d.value),
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
-                        children: activityLabels.entries.map((a) {
-                          final selected = set.contains(a.key);
-                          return FilterChip(
-                            selected: selected,
-                            label: Text(a.value),
-                            onSelected: (_) => onToggle(slot, d.key, a.key),
-                          );
-                        }).toList(),
-                      ),
-                      const SizedBox(height: 10),
-                    ],
-                  );
-                }),
+                Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: Colors.black54,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  value,
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
               ],
             ),
           ),
-        );
-      }).toList(),
+        ],
+      ),
     );
   }
-}
 
-class _PatternSession {
-  final int dayOfWeek;
-  final String timeSlot;
-  final String activityTypeId;
-  final int durationMinutes;
-  final int sessionOrder;
+  Widget _sectionContainer({
+    required String title,
+    required Widget child,
+  }) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(18),
+        color: Colors.white,
+        boxShadow: const [
+          BoxShadow(
+            blurRadius: 14,
+            offset: Offset(0, 6),
+            color: Color(0x12000000),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: const TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 12),
+          child,
+        ],
+      ),
+    );
+  }
 
-  _PatternSession({
-    required this.dayOfWeek,
-    required this.timeSlot,
-    required this.activityTypeId,
-    required this.durationMinutes,
-    required this.sessionOrder,
-  });
+  Widget _buildAthleteSummarySection() {
+    final fullName = _s(_profile?['full_name']).isEmpty
+        ? 'Atleta'
+        : _s(_profile?['full_name']);
+    final email = _s(_profile?['email']);
+    final weight = _s(_athlete?['weight_kg']);
+    final height = _s(_athlete?['height_cm']);
+    final level = _s(_athlete?['experience_level']);
+    final fitness = _s(_athlete?['fitness_level']);
+    final vo2 = _s(_athlete?['vo2_max']);
+    final garmin = _athlete?['garmin_connected'] == true ? 'Sim' : 'Não';
 
-  Map<String, dynamic> toInsert(int patternId) => {
-        'standard_week_pattern_id': patternId,
-        'day_of_week': dayOfWeek,
-        'activity_type_id': activityTypeId,
-        'duration_minutes': durationMinutes,
-        'time_slot': timeSlot,
-        'session_order': sessionOrder,
-      };
-}
+    return _sectionContainer(
+      title: 'Resumo do atleta',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            fullName,
+            style: const TextStyle(
+              fontWeight: FontWeight.w700,
+              fontSize: 16,
+            ),
+          ),
+          if (email.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            Text(email),
+          ],
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 12,
+            runSpacing: 12,
+            children: [
+              _metricCard(
+                title: 'Peso',
+                value: weight.isEmpty ? '-' : '$weight kg',
+                icon: Icons.monitor_weight,
+              ),
+              _metricCard(
+                title: 'Altura',
+                value: height.isEmpty ? '-' : '$height cm',
+                icon: Icons.height,
+              ),
+              _metricCard(
+                title: 'Nível',
+                value: level.isEmpty ? '-' : level,
+                icon: Icons.speed,
+              ),
+              _metricCard(
+                title: 'Fitness level',
+                value: fitness.isEmpty ? '-' : fitness,
+                icon: Icons.insights,
+              ),
+              _metricCard(
+                title: 'VO2 máx',
+                value: vo2.isEmpty ? '-' : vo2,
+                icon: Icons.favorite,
+              ),
+              _metricCard(
+                title: 'Garmin conectado',
+                value: garmin,
+                icon: Icons.watch,
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
 
-class _AddSessionDialog extends StatefulWidget {
-  final Map<String, String> activityLabels;
+  Widget _buildWorkoutSummarySection() {
+    final s = _summary();
+    final byActivity = (s['by_activity'] as Map<String, int>);
 
-  const _AddSessionDialog({required this.activityLabels});
+    return _sectionContainer(
+      title: 'Resumo dos treinos',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Wrap(
+            spacing: 12,
+            runSpacing: 12,
+            children: [
+              _metricCard(
+                title: 'Planejados',
+                value: '${s['planned']}',
+                icon: Icons.schedule,
+              ),
+              _metricCard(
+                title: 'Publicados',
+                value: '${s['published']}',
+                icon: Icons.publish,
+              ),
+              _metricCard(
+                title: 'Concluídos',
+                value: '${s['completed']}',
+                icon: Icons.check_circle,
+              ),
+              _metricCard(
+                title: 'Total',
+                value: '${s['total']}',
+                icon: Icons.fitness_center,
+              ),
+              _metricCard(
+                title: 'Carga total',
+                value: _formatHours(_n(s['total_duration_sec'])),
+                icon: Icons.timer,
+              ),
+            ],
+          ),
+          const SizedBox(height: 18),
+          const Text(
+            'Distribuição por atividade',
+            style: TextStyle(fontWeight: FontWeight.w700),
+          ),
+          const SizedBox(height: 10),
+          if (byActivity.isEmpty)
+            const Text('Sem treinos disponíveis.')
+          else
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: byActivity.entries.map((entry) {
+                return Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(20),
+                    color: const Color(0xFFE9EDF5),
+                  ),
+                  child: Text('${entry.key}: ${entry.value}'),
+                );
+              }).toList(),
+            ),
+        ],
+      ),
+    );
+  }
 
-  @override
-  State<_AddSessionDialog> createState() => _AddSessionDialogState();
-}
+  Widget _buildAgendaSection() {
+    return _sectionContainer(
+      title: 'Minha agenda de treinos',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          DropdownButtonFormField<String>(
+            initialValue: _filter,
+            decoration: const InputDecoration(
+              labelText: 'Filtro dos treinos',
+              border: OutlineInputBorder(),
+              filled: true,
+            ),
+            items: const [
+              DropdownMenuItem(
+                value: 'planned',
+                child: Text('Planejados'),
+              ),
+              DropdownMenuItem(
+                value: 'published',
+                child: Text('Publicados'),
+              ),
+              DropdownMenuItem(
+                value: 'completed',
+                child: Text('Concluídos'),
+              ),
+              DropdownMenuItem(
+                value: 'all',
+                child: Text('Todos'),
+              ),
+            ],
+            onChanged: (value) {
+              setState(() {
+                _filter = value ?? 'all';
+                _applyFilter();
+              });
+            },
+          ),
+          const SizedBox(height: 14),
+          if (_filteredWorkouts.isEmpty)
+            const Text('Nenhum treino encontrado para este filtro.')
+          else
+            Column(
+              children: _filteredWorkouts.map((w) {
+                final workoutId = w['id'] as int;
+                final title = _s(w['title']).isEmpty ? 'Treino' : _s(w['title']);
+                final date = _dateText(w['scheduled_date']);
+                final timeSlot = _s(w['time_slot']);
+                final plannedRpe = _s(w['planned_rpe']);
+                final description = _s(w['description']);
+                final durationSec = _n(w['planned_duration_sec']);
+                final activity = _activityLabel(_s(w['activity_type_id']));
+                final professionalName = _s(w['professional_name']);
 
-class _AddSessionDialogState extends State<_AddSessionDialog> {
-  int _day = 1;
-  String _slot = 'morning';
-  String _activity = 'running';
-  int _duration = 45;
-  int _order = 1;
+                final status = _s(w['status']);
+                final validationStatus = _s(w['validation_status']);
+
+                final chipStatus =
+                    status == 'published' || validationStatus == 'published'
+                        ? 'published'
+                        : status == 'completed'
+                            ? 'completed'
+                            : 'planned';
+
+                return Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(14),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Expanded(
+                              child: Text(
+                                title,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: 16,
+                                ),
+                              ),
+                            ),
+                            _statusChip(chipStatus),
+                          ],
+                        ),
+                        const SizedBox(height: 6),
+                        Text('Data: $date'),
+                        Text('Atividade: $activity'),
+                        if (professionalName.isNotEmpty)
+                          Text('Profissional: $professionalName'),
+                        if (timeSlot.isNotEmpty) Text('Período: $timeSlot'),
+                        if (durationSec > 0)
+                          Text('Duração planejada: ${_formatHours(durationSec)}'),
+                        if (plannedRpe.isNotEmpty) Text('RPE: $plannedRpe'),
+                        if (description.isNotEmpty) ...[
+                          const SizedBox(height: 8),
+                          Text(description),
+                        ],
+                        const SizedBox(height: 12),
+                        if (chipStatus == 'published')
+                          FilledButton(
+                            onPressed: () => _markCompleted(workoutId),
+                            child: const Text('Marcar como concluído'),
+                          ),
+                      ],
+                    ),
+                  ),
+                );
+              }).toList(),
+            ),
+        ],
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
-      title: const Text('Adicionar sessão'),
-      content: SingleChildScrollView(
-        child: Column(
-          children: [
-            DropdownButtonFormField<int>(
-              value: _day,
-              decoration: const InputDecoration(labelText: 'Dia da semana'),
-              items: const [
-                DropdownMenuItem(value: 1, child: Text('Seg')),
-                DropdownMenuItem(value: 2, child: Text('Ter')),
-                DropdownMenuItem(value: 3, child: Text('Qua')),
-                DropdownMenuItem(value: 4, child: Text('Qui')),
-                DropdownMenuItem(value: 5, child: Text('Sex')),
-                DropdownMenuItem(value: 6, child: Text('Sáb')),
-                DropdownMenuItem(value: 7, child: Text('Dom')),
-              ],
-              onChanged: (v) => setState(() => _day = v ?? 1),
-            ),
-            DropdownButtonFormField<String>(
-              value: _slot,
-              decoration: const InputDecoration(labelText: 'Turno'),
-              items: const [
-                DropdownMenuItem(value: 'morning', child: Text('Manhã')),
-                DropdownMenuItem(value: 'afternoon', child: Text('Tarde')),
-                DropdownMenuItem(value: 'evening', child: Text('Noite')),
-              ],
-              onChanged: (v) => setState(() => _slot = v ?? 'morning'),
-            ),
-            DropdownButtonFormField<String>(
-              value: _activity,
-              decoration: const InputDecoration(labelText: 'Modalidade'),
-              items: widget.activityLabels.entries
-                  .map((e) => DropdownMenuItem(value: e.key, child: Text(e.value)))
-                  .toList(),
-              onChanged: (v) => setState(() => _activity = v ?? 'running'),
-            ),
-            TextFormField(
-              initialValue: '45',
-              decoration: const InputDecoration(labelText: 'Duração (min)'),
-              keyboardType: TextInputType.number,
-              onChanged: (v) => _duration = int.tryParse(v.trim()) ?? 45,
-            ),
-            TextFormField(
-              initialValue: '1',
-              decoration: const InputDecoration(labelText: 'Ordem da sessão'),
-              keyboardType: TextInputType.number,
-              onChanged: (v) => _order = int.tryParse(v.trim()) ?? 1,
-            ),
-          ],
-        ),
+    return Scaffold(
+      backgroundColor: const Color(0xFFF4F6FA),
+      appBar: AppBar(
+        title: const Text('Agenda do Atleta'),
+        actions: [
+          IconButton(
+            onPressed: _load,
+            icon: const Icon(Icons.refresh),
+          ),
+        ],
       ),
-      actions: [
-        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancelar')),
-        FilledButton(
-          onPressed: () {
-            Navigator.pop(
-              context,
-              _PatternSession(
-                dayOfWeek: _day,
-                timeSlot: _slot,
-                activityTypeId: _activity,
-                durationMinutes: _duration,
-                sessionOrder: _order,
+      body: Column(
+        children: [
+          if (_loading) const LinearProgressIndicator(),
+          if (_msg != null)
+            Padding(
+              padding: const EdgeInsets.all(12),
+              child: Text(
+                _msg!,
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: Colors.red),
               ),
-            );
-          },
-          child: const Text('Adicionar'),
-        ),
-      ],
+            ),
+          Expanded(
+            child: ListView(
+              padding: const EdgeInsets.all(16),
+              children: [
+                _buildAthleteSummarySection(),
+                _buildWorkoutSummarySection(),
+                _buildAgendaSection(),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

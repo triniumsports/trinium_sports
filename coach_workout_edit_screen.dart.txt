@@ -14,7 +14,7 @@ class CoachWorkoutEditScreen extends StatefulWidget {
 }
 
 class _CoachWorkoutEditScreenState extends State<CoachWorkoutEditScreen> {
-  final SupabaseClient _client = Supabase.instance.client;
+  final _client = Supabase.instance.client;
 
   bool _loading = true;
   bool _saving = false;
@@ -23,10 +23,10 @@ class _CoachWorkoutEditScreenState extends State<CoachWorkoutEditScreen> {
   Map<String, dynamic>? _workout;
   List<Map<String, dynamic>> _steps = [];
 
-  final TextEditingController _titleController = TextEditingController();
-  final TextEditingController _descriptionController = TextEditingController();
-  final TextEditingController _durationController = TextEditingController();
-  final TextEditingController _rpeController = TextEditingController();
+  final _titleController = TextEditingController();
+  final _descriptionController = TextEditingController();
+  final _durationController = TextEditingController();
+  final _rpeController = TextEditingController();
 
   final Map<String, TextEditingController> _stepDurationControllers = {};
   final Map<String, TextEditingController> _stepNotesControllers = {};
@@ -52,20 +52,6 @@ class _CoachWorkoutEditScreenState extends State<CoachWorkoutEditScreen> {
     }
 
     super.dispose();
-  }
-
-  String _s(dynamic v) => v == null ? '' : v.toString().trim();
-
-  num? _toNumOrNull(String value) {
-    final v = value.trim();
-    if (v.isEmpty) return null;
-    return num.tryParse(v);
-  }
-
-  String _dateText() {
-    final raw = _s(_workout?['scheduled_date']);
-    if (raw.length >= 10) return raw.substring(0, 10);
-    return raw;
   }
 
   Future<void> _load() async {
@@ -94,20 +80,18 @@ class _CoachWorkoutEditScreenState extends State<CoachWorkoutEditScreen> {
       _workout = Map<String, dynamic>.from(workout);
       _steps = (steps as List).cast<Map<String, dynamic>>();
 
-      _titleController.text = _s(_workout?['title']);
-      _descriptionController.text = _s(_workout?['description']);
-      _durationController.text = _s(_workout?['planned_duration_sec']);
-      _rpeController.text = _s(_workout?['planned_rpe']);
+      _titleController.text = (_workout?['title'] ?? '').toString();
+      _descriptionController.text = (_workout?['description'] ?? '').toString();
+      _durationController.text =
+          (_workout?['planned_duration_sec'] ?? '').toString();
+      _rpeController.text = (_workout?['planned_rpe'] ?? '').toString();
 
       for (final s in _steps) {
-        final id = _s(s['id']);
-        _stepDurationControllers[id]?.dispose();
-        _stepNotesControllers[id]?.dispose();
-
+        final id = (s['id'] ?? '').toString();
         _stepDurationControllers[id] =
-            TextEditingController(text: _s(s['duration_value']));
+            TextEditingController(text: (s['duration_value'] ?? '').toString());
         _stepNotesControllers[id] =
-            TextEditingController(text: _s(s['notes']));
+            TextEditingController(text: (s['notes'] ?? '').toString());
       }
     } catch (e) {
       _msg = 'Erro ao carregar treino: $e';
@@ -116,16 +100,10 @@ class _CoachWorkoutEditScreenState extends State<CoachWorkoutEditScreen> {
     }
   }
 
-  Future<void> _persistSteps() async {
-    for (final s in _steps) {
-      final id = _s(s['id']);
-      await _client.from('prescribed_workout_steps').update({
-        'duration_value': _toNumOrNull(_stepDurationControllers[id]?.text ?? ''),
-        'notes': (_stepNotesControllers[id]?.text ?? '').trim().isEmpty
-            ? null
-            : (_stepNotesControllers[id]?.text ?? '').trim(),
-      }).eq('id', s['id']);
-    }
+  num? _toNumOrNull(String value) {
+    final v = value.trim();
+    if (v.isEmpty) return null;
+    return num.tryParse(v);
   }
 
   Future<void> _saveDraft() async {
@@ -142,11 +120,18 @@ class _CoachWorkoutEditScreenState extends State<CoachWorkoutEditScreen> {
             : _descriptionController.text.trim(),
         'planned_duration_sec': _toNumOrNull(_durationController.text),
         'planned_rpe': _toNumOrNull(_rpeController.text),
-        'status': 'planned',
-        'validation_status': 'review',
+        'validation_status': 'pending',
       }).eq('id', widget.workoutId);
 
-      await _persistSteps();
+      for (final s in _steps) {
+        final id = (s['id'] ?? '').toString();
+        await _client.from('prescribed_workout_steps').update({
+          'duration_value': _toNumOrNull(_stepDurationControllers[id]?.text ?? ''),
+          'notes': (_stepNotesControllers[id]?.text ?? '').trim().isEmpty
+              ? null
+              : (_stepNotesControllers[id]?.text ?? '').trim(),
+        }).eq('id', s['id']);
+      }
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -179,12 +164,19 @@ class _CoachWorkoutEditScreenState extends State<CoachWorkoutEditScreen> {
         'planned_rpe': _toNumOrNull(_rpeController.text),
       }).eq('id', widget.workoutId);
 
-      await _persistSteps();
+      for (final s in _steps) {
+        final id = (s['id'] ?? '').toString();
+        await _client.from('prescribed_workout_steps').update({
+          'duration_value': _toNumOrNull(_stepDurationControllers[id]?.text ?? ''),
+          'notes': (_stepNotesControllers[id]?.text ?? '').trim().isEmpty
+              ? null
+              : (_stepNotesControllers[id]?.text ?? '').trim(),
+        }).eq('id', s['id']);
+      }
 
       await _client.from('prescribed_workouts').update({
-        'status': 'published',
         'validation_status': 'published',
-        'approved_at': DateTime.now().toUtc().toIso8601String(),
+        'approved_at': DateTime.now().toIso8601String(),
         'approved_by_coach_id': user.id,
       }).eq('id', widget.workoutId);
 
@@ -198,6 +190,12 @@ class _CoachWorkoutEditScreenState extends State<CoachWorkoutEditScreen> {
     } finally {
       if (mounted) setState(() => _saving = false);
     }
+  }
+
+  String _dateText() {
+    final raw = (_workout?['scheduled_date'] ?? '').toString();
+    if (raw.length >= 10) return raw.substring(0, 10);
+    return raw;
   }
 
   @override
@@ -280,10 +278,10 @@ class _CoachWorkoutEditScreenState extends State<CoachWorkoutEditScreen> {
             const Text('Este treino não possui steps.')
           else
             ..._steps.map((s) {
-              final id = _s(s['id']);
-              final order = _s(s['step_order']);
-              final stepType = _s(s['step_type']);
-              final zone = _s(s['target_zone']);
+              final id = (s['id'] ?? '').toString();
+              final order = (s['step_order'] ?? '').toString();
+              final stepType = (s['step_type'] ?? '').toString();
+              final zone = (s['target_zone'] ?? '').toString();
 
               return Card(
                 child: Padding(

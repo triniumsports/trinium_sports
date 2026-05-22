@@ -19,48 +19,35 @@ class ProfessionalProfileFormScreen extends StatefulWidget {
 
 class _ProfessionalProfileFormScreenState
     extends State<ProfessionalProfileFormScreen> {
-  final SupabaseClient _client = Supabase.instance.client;
+  final _client = Supabase.instance.client;
 
   bool _loading = true;
   bool _saving = false;
   bool _uploading = false;
   String? _msg;
 
-  final TextEditingController _nameController = TextEditingController();
-  final TextEditingController _registrationController =
-      TextEditingController();
-  final TextEditingController _registrationStateController =
-      TextEditingController();
-  final TextEditingController _licenseNumberController =
-      TextEditingController();
-  final TextEditingController _licenseStateController =
-      TextEditingController();
-  final TextEditingController _phoneController = TextEditingController();
-  final TextEditingController _zipController = TextEditingController();
-  final TextEditingController _streetController = TextEditingController();
-  final TextEditingController _numberController = TextEditingController();
-  final TextEditingController _neighborhoodController =
-      TextEditingController();
-  final TextEditingController _cityController = TextEditingController();
-  final TextEditingController _stateController = TextEditingController();
-  final TextEditingController _academicDegreeController =
-      TextEditingController();
-  final TextEditingController _universityController =
-      TextEditingController();
-  final TextEditingController _graduationYearController =
-      TextEditingController();
-  final TextEditingController _certificationsController =
-      TextEditingController();
-  final TextEditingController _yearsExperienceController =
-      TextEditingController();
-  final TextEditingController _birthDateController =
-      TextEditingController();
-  final TextEditingController _genderController = TextEditingController();
-  final TextEditingController _instagramController =
-      TextEditingController();
-  final TextEditingController _linkedinController =
-      TextEditingController();
-  final TextEditingController _bioController = TextEditingController();
+  final _nameController = TextEditingController();
+  final _crefOrCrnController = TextEditingController();
+  final _licenseNumberController = TextEditingController();
+  final _phoneController = TextEditingController();
+  final _zipController = TextEditingController();
+  final _streetController = TextEditingController();
+  final _numberController = TextEditingController();
+  final _neighborhoodController = TextEditingController();
+  final _cityController = TextEditingController();
+  final _stateController = TextEditingController();
+  final _academicDegreeController = TextEditingController();
+  final _universityController = TextEditingController();
+  final _graduationYearController = TextEditingController();
+  final _certificationsController = TextEditingController();
+  final _yearsExperienceController = TextEditingController();
+  final _birthDateController = TextEditingController();
+  final _genderController = TextEditingController();
+  final _instagramController = TextEditingController();
+  final _linkedinController = TextEditingController();
+  final _bioController = TextEditingController();
+  final _crefCrnStateController = TextEditingController();
+  final _licenseStateController = TextEditingController();
 
   String _professionalType = 'coach';
   final Set<String> _specialties = {};
@@ -68,27 +55,13 @@ class _ProfessionalProfileFormScreenState
   String _verificationStatus = 'pending';
   final Set<String> _uploadedDocTypes = {};
 
-  static const Map<String, String> professionalTypeLabels = {
-    'coach': 'Coach esportivo',
-    'running_coach': 'Treinador de corrida',
-    'nutritionist': 'Nutricionista',
-    'strength_coach': 'Preparador físico',
-    'physiotherapist': 'Fisioterapeuta',
-    'swim_coach': 'Treinador de natação',
-    'triathlon_coach': 'Treinador de triathlon',
-    'trail_coach': 'Treinador de trail',
-  };
-
   static const Map<String, String> specialtyLabels = {
-    'running': 'Corrida',
-    'trail_running': 'Trail',
-    'swimming': 'Natação',
-    'cycling': 'Ciclismo',
+    'run': 'Corrida',
+    'swim': 'Natação',
+    'bike': 'Ciclismo',
     'strength': 'Força / Musculação',
-    'triathlon': 'Triathlon',
-    'swimrun': 'Swimrun',
-    'open_water_swimming': 'Águas abertas',
-    'mtb': 'MTB',
+    'trail': 'Trail',
+    'triathlon': 'Triatlo',
   };
 
   bool get _hasAllDocs =>
@@ -96,16 +69,8 @@ class _ProfessionalProfileFormScreenState
       _uploadedDocTypes.contains('council') &&
       _uploadedDocTypes.contains('lookup_print');
 
-  String get _registrationLabel {
-    switch (_professionalType) {
-      case 'nutritionist':
-        return 'CRN';
-      case 'physiotherapist':
-        return 'CREFITO';
-      default:
-        return 'CREF/Registro';
-    }
-  }
+  String get _registrationLabel =>
+      _professionalType == 'nutritionist' ? 'CRN' : 'CREF';
 
   @override
   void initState() {
@@ -116,10 +81,8 @@ class _ProfessionalProfileFormScreenState
   @override
   void dispose() {
     _nameController.dispose();
-    _registrationController.dispose();
-    _registrationStateController.dispose();
+    _crefOrCrnController.dispose();
     _licenseNumberController.dispose();
-    _licenseStateController.dispose();
     _phoneController.dispose();
     _zipController.dispose();
     _streetController.dispose();
@@ -137,13 +100,9 @@ class _ProfessionalProfileFormScreenState
     _instagramController.dispose();
     _linkedinController.dispose();
     _bioController.dispose();
+    _crefCrnStateController.dispose();
+    _licenseStateController.dispose();
     super.dispose();
-  }
-
-  int? _toIntOrNull(String value) {
-    final v = value.trim();
-    if (v.isEmpty) return null;
-    return int.tryParse(v);
   }
 
   Future<void> _load() async {
@@ -159,14 +118,18 @@ class _ProfessionalProfileFormScreenState
     try {
       final profile = await _client
           .from('profiles')
-          .select('full_name, avatar_url')
+          .select('full_name,avatar_url')
           .eq('id', user.id)
           .maybeSingle();
 
       final coach = await _client
           .from('coaches')
           .select(
-            'cref_number, cref_state, academic_degree, university_name, graduation_year, specialties, certifications, years_experience, birth_date, gender, address_street, address_number, address_neighborhood, address_city, address_state, address_zip_code, phone_mobile, social_instagram, social_linkedin, bio, professional_type, license_number, license_state, verification_status, verification_documents',
+            'cref_number,cref_state,academic_degree,university_name,graduation_year,'
+            'specialties,certifications,years_experience,birth_date,gender,'
+            'address_street,address_number,address_neighborhood,address_city,address_state,address_zip_code,'
+            'phone_mobile,social_instagram,social_linkedin,bio,professional_type,'
+            'license_number,license_state,verification_status,verification_documents',
           )
           .eq('id', user.id)
           .maybeSingle();
@@ -177,13 +140,13 @@ class _ProfessionalProfileFormScreenState
 
       _professionalType =
           (coach?['professional_type'] ?? 'coach').toString().trim();
-      if (!professionalTypeLabels.containsKey(_professionalType)) {
+      if (!['coach', 'nutritionist'].contains(_professionalType)) {
         _professionalType = 'coach';
       }
 
-      _registrationController.text =
+      _crefOrCrnController.text =
           (coach?['cref_number'] ?? '').toString();
-      _registrationStateController.text =
+      _crefCrnStateController.text =
           (coach?['cref_state'] ?? '').toString();
       _academicDegreeController.text =
           (coach?['academic_degree'] ?? '').toString();
@@ -325,13 +288,19 @@ class _ProfessionalProfileFormScreenState
 
   bool _isValid() {
     if (_nameController.text.trim().isEmpty) return false;
-    if (_registrationController.text.trim().isEmpty) return false;
+    if (_crefOrCrnController.text.trim().isEmpty) return false;
     if (_phoneController.text.trim().isEmpty) return false;
     if (_zipController.text.trim().isEmpty) return false;
     if (_specialties.isEmpty) return false;
     if ((_avatarUrl ?? '').isEmpty) return false;
     if (!_hasAllDocs) return false;
     return true;
+  }
+
+  int? _toIntOrNull(String value) {
+    final v = value.trim();
+    if (v.isEmpty) return null;
+    return int.tryParse(v);
   }
 
   Future<void> _save() async {
@@ -360,11 +329,10 @@ class _ProfessionalProfileFormScreenState
 
       await _client.from('coaches').upsert({
         'id': user.id,
-        'display_name': _nameController.text.trim(),
-        'cref_number': _registrationController.text.trim(),
-        'cref_state': _registrationStateController.text.trim().isEmpty
+        'cref_number': _crefOrCrnController.text.trim(),
+        'cref_state': _crefCrnStateController.text.trim().isEmpty
             ? null
-            : _registrationStateController.text.trim(),
+            : _crefCrnStateController.text.trim(),
         'academic_degree': _academicDegreeController.text.trim().isEmpty
             ? null
             : _academicDegreeController.text.trim(),
@@ -416,8 +384,7 @@ class _ProfessionalProfileFormScreenState
         'license_state': _licenseStateController.text.trim().isEmpty
             ? null
             : _licenseStateController.text.trim(),
-        'verification_status': _hasAllDocs ? 'approved' : 'pending',
-        'is_verified': _hasAllDocs,
+        'verification_status': _hasAllDocs ? 'verified' : 'pending',
         'verification_submitted_at':
             _hasAllDocs ? DateTime.now().toIso8601String() : null,
         'updated_at': DateTime.now().toIso8601String(),
@@ -435,12 +402,8 @@ class _ProfessionalProfileFormScreenState
     }
   }
 
-  Widget _field(
-    TextEditingController controller,
-    String label, {
-    int maxLines = 1,
-    TextInputType? keyboardType,
-  }) {
+  Widget _field(TextEditingController controller, String label,
+      {int maxLines = 1, TextInputType? keyboardType}) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: TextField(
@@ -534,12 +497,12 @@ class _ProfessionalProfileFormScreenState
                         padding: const EdgeInsets.all(12),
                         decoration: BoxDecoration(
                           borderRadius: BorderRadius.circular(12),
-                          color: _verificationStatus == 'approved'
+                          color: _verificationStatus == 'verified'
                               ? const Color(0xFFEAF8EE)
                               : const Color(0xFFFFF4E5),
                         ),
                         child: Text(
-                          _verificationStatus == 'approved'
+                          _verificationStatus == 'verified'
                               ? 'Status atual: aprovado automaticamente ✅'
                               : 'Status atual: pendente. Envie os 3 documentos para aprovação automática.',
                           textAlign: TextAlign.center,
@@ -563,19 +526,21 @@ class _ProfessionalProfileFormScreenState
                       ],
                       const SizedBox(height: 20),
                       DropdownButtonFormField<String>(
-                        initialValue: _professionalType,
+                        value: _professionalType,
                         decoration: const InputDecoration(
                           labelText: 'Tipo profissional',
                           border: OutlineInputBorder(),
                         ),
-                        items: professionalTypeLabels.entries
-                            .map(
-                              (e) => DropdownMenuItem(
-                                value: e.key,
-                                child: Text(e.value),
-                              ),
-                            )
-                            .toList(),
+                        items: const [
+                          DropdownMenuItem(
+                            value: 'coach',
+                            child: Text('Treinador'),
+                          ),
+                          DropdownMenuItem(
+                            value: 'nutritionist',
+                            child: Text('Nutricionista'),
+                          ),
+                        ],
                         onChanged: (value) {
                           setState(() {
                             _professionalType = value ?? 'coach';
@@ -584,24 +549,11 @@ class _ProfessionalProfileFormScreenState
                       ),
                       const SizedBox(height: 12),
                       _field(_nameController, 'Nome completo *'),
-                      _field(_registrationController, '$_registrationLabel *'),
-                      _field(
-                        _registrationStateController,
-                        'Estado do $_registrationLabel',
-                      ),
-                      _field(
-                        _licenseNumberController,
-                        'Número de licença / registro complementar',
-                      ),
-                      _field(
-                        _licenseStateController,
-                        'Estado da licença complementar',
-                      ),
-                      _field(
-                        _phoneController,
-                        'Celular *',
-                        keyboardType: TextInputType.phone,
-                      ),
+                      _field(_crefOrCrnController, '$_registrationLabel *'),
+                      _field(_crefCrnStateController, 'Estado do $_registrationLabel'),
+                      _field(_licenseNumberController, 'Número de licença / registro complementar'),
+                      _field(_licenseStateController, 'Estado da licença complementar'),
+                      _field(_phoneController, 'Celular *', keyboardType: TextInputType.phone),
                       _field(_zipController, 'CEP *'),
                       _field(_streetController, 'Rua'),
                       _field(_numberController, 'Número'),
@@ -610,21 +562,10 @@ class _ProfessionalProfileFormScreenState
                       _field(_stateController, 'UF'),
                       _field(_academicDegreeController, 'Grau acadêmico'),
                       _field(_universityController, 'Universidade'),
-                      _field(
-                        _graduationYearController,
-                        'Ano de formação',
-                        keyboardType: TextInputType.number,
-                      ),
+                      _field(_graduationYearController, 'Ano de formação', keyboardType: TextInputType.number),
                       _field(_certificationsController, 'Certificações'),
-                      _field(
-                        _yearsExperienceController,
-                        'Anos de experiência',
-                        keyboardType: TextInputType.number,
-                      ),
-                      _field(
-                        _birthDateController,
-                        'Data de nascimento (YYYY-MM-DD)',
-                      ),
+                      _field(_yearsExperienceController, 'Anos de experiência', keyboardType: TextInputType.number),
+                      _field(_birthDateController, 'Data de nascimento (YYYY-MM-DD)'),
                       _field(_genderController, 'Gênero'),
                       _field(_instagramController, 'Instagram'),
                       _field(_linkedinController, 'LinkedIn'),
@@ -665,17 +606,11 @@ class _ProfessionalProfileFormScreenState
                       const SizedBox(height: 12),
                       _docTile('RG/CNH', 'identity', 'Enviar RG/CNH'),
                       const SizedBox(height: 14),
-                      _docTile(
-                        'Documento do Conselho',
-                        'council',
-                        'Enviar documento do Conselho',
-                      ),
+                      _docTile('Documento do Conselho', 'council',
+                          'Enviar documento do Conselho'),
                       const SizedBox(height: 14),
-                      _docTile(
-                        'Print da consulta pública',
-                        'lookup_print',
-                        'Enviar print da consulta pública',
-                      ),
+                      _docTile('Print da consulta pública', 'lookup_print',
+                          'Enviar print da consulta pública'),
                       const SizedBox(height: 20),
                       FilledButton(
                         onPressed: _saving ? null : _save,

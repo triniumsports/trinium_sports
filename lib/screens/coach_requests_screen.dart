@@ -12,7 +12,7 @@ class CoachRequestsScreen extends StatefulWidget {
 
 class _CoachRequestsScreenState extends State<CoachRequestsScreen>
     with SingleTickerProviderStateMixin {
-  final _client = Supabase.instance.client;
+  final SupabaseClient _client = Supabase.instance.client;
 
   late final TabController _tabController;
 
@@ -21,8 +21,6 @@ class _CoachRequestsScreenState extends State<CoachRequestsScreen>
 
   List<Map<String, dynamic>> _pendingRelations = [];
   List<Map<String, dynamic>> _activeRelations = [];
-  Map<String, Map<String, dynamic>> _athleteProfilesById = {};
-  Map<String, Map<String, dynamic>> _mainRaceByAthleteId = {};
   Map<String, Map<String, int>> _countsByAthleteId = {};
 
   @override
@@ -48,22 +46,18 @@ class _CoachRequestsScreenState extends State<CoachRequestsScreen>
     });
 
     try {
-      final pending = await _client
-          .from('coach_athlete_relation')
-          .select('id, athlete_id, status, created_at')
-          .eq('coach_id', user.id)
-          .eq('status', 'pending')
-          .order('created_at', ascending: true);
-
-      final active = await _client
-          .from('coach_athlete_relation')
-          .select('id, athlete_id, status, created_at')
-          .eq('coach_id', user.id)
-          .eq('status', 'active')
+      final links = await _client
+          .from('v_athlete_professional_links')
+          .select()
+          .eq('professional_id', user.id)
           .order('created_at', ascending: false);
 
-      _pendingRelations = (pending as List).cast<Map<String, dynamic>>();
-      _activeRelations = (active as List).cast<Map<String, dynamic>>();
+      final allLinks = (links as List).cast<Map<String, dynamic>>();
+
+      _pendingRelations =
+          allLinks.where((e) => e['status'] == 'pending').toList();
+      _activeRelations =
+          allLinks.where((e) => e['status'] == 'active').toList();
 
       final athleteIds = <String>{
         ..._pendingRelations
@@ -74,68 +68,49 @@ class _CoachRequestsScreenState extends State<CoachRequestsScreen>
             .where((x) => x.isNotEmpty),
       }.toList();
 
-      if (athleteIds.isNotEmpty) {
-        final inValues = '(${athleteIds.map((e) => '"$e"').join(',')})';
-
-        final profs = await _client
-            .from('profiles')
-            .select('id, full_name, email, avatar_url')
-            .filter('id', 'in', inValues);
-
-        final profileMap = <String, Map<String, dynamic>>{};
-        for (final p in (profs as List).cast<Map<String, dynamic>>()) {
-          profileMap[(p['id'] ?? '').toString()] = p;
-        }
-        _athleteProfilesById = profileMap;
-
-        final races = await _client
-            .from('target_races')
-            .select(
-              'id, athlete_id, race_date, status, distance_meters, priority, calculated_race_category_id, activity_type_id',
-            )
-            .filter('athlete_id', 'in', inValues)
-            .eq('status', 'planned')
-            .order('race_date', ascending: true);
-
-        final raceMap = <String, Map<String, dynamic>>{};
-        for (final r in (races as List).cast<Map<String, dynamic>>()) {
-          final athleteId = (r['athlete_id'] ?? '').toString();
-          raceMap.putIfAbsent(athleteId, () => r);
-        }
-        _mainRaceByAthleteId = raceMap;
-
+      if (athleteIds.isEmpty) {
+        _countsByAthleteId = {};
+      } else {
         final workouts = await _client
-            .from('prescribed_workouts')
-            .select('athlete_id, validation_status')
-            .filter('athlete_id', 'in', inValues);
+            .from('v_prescribed_workouts_mvp')
+            .select('athlete_id, status, validation_status')
+            .filter('athlete_id', 'in', '(${athleteIds.map((e) => '"$e"').join(',')})');
 
         final countMap = <String, Map<String, int>>{};
         for (final row in (workouts as List).cast<Map<String, dynamic>>()) {
           final athleteId = (row['athlete_id'] ?? '').toString();
-          final status = (row['validation_status'] ?? '').toString();
+          final status = (row['status'] ?? '').toString();
+          final validationStatus = (row['validation_status'] ?? '').toString();
 
           countMap.putIfAbsent(athleteId, () => {
-                'pending': 0,
+                'planned': 0,
                 'published': 0,
+                'completed': 0,
                 'total': 0,
               });
 
           countMap[athleteId]!['total'] =
               (countMap[athleteId]!['total'] ?? 0) + 1;
 
-          if (status == 'pending') {
-            countMap[athleteId]!['pending'] =
-                (countMap[athleteId]!['pending'] ?? 0) + 1;
-          } else if (status == 'published') {
+          if (status == 'planned' ||
+              validationStatus == 'draft' ||
+              validationStatus == 'review') {
+            countMap[athleteId]!['planned'] =
+                (countMap[athleteId]!['planned'] ?? 0) + 1;
+          }
+
+          if (status == 'published' || validationStatus == 'published') {
             countMap[athleteId]!['published'] =
                 (countMap[athleteId]!['published'] ?? 0) + 1;
           }
+
+          if (status == 'completed') {
+            countMap[athleteId]!['completed'] =
+                (countMap[athleteId]!['completed'] ?? 0) + 1;
+          }
         }
+
         _countsByAthleteId = countMap;
-      } else {
-        _athleteProfilesById = {};
-        _mainRaceByAthleteId = {};
-        _countsByAthleteId = {};
       }
     } catch (e) {
       _msg = 'Erro ao carregar solicitações: $e';
@@ -151,7 +126,10 @@ class _CoachRequestsScreenState extends State<CoachRequestsScreen>
     try {
       await _client
           .from('coach_athlete_relation')
-          .update({'status': 'active'})
+          .update({
+            'status': 'active',
+            'updated_at': DateTime.now().toUtc().toIso8601String(),
+          })
           .eq('id', relationId)
           .eq('coach_id', user.id);
 
@@ -168,113 +146,29 @@ class _CoachRequestsScreenState extends State<CoachRequestsScreen>
     }
   }
 
-  Future<void> _acceptAndGenerate({
-    required String relationId,
-    required String athleteId,
-  }) async {
+  Future<void> _reject(String relationId) async {
     final user = _client.auth.currentUser;
     if (user == null) return;
 
     try {
-      setState(() {
-        _loading = true;
-        _msg = null;
-      });
-
       await _client
           .from('coach_athlete_relation')
-          .update({'status': 'active'})
+          .update({
+            'status': 'rejected',
+            'updated_at': DateTime.now().toUtc().toIso8601String(),
+          })
           .eq('id', relationId)
           .eq('coach_id', user.id);
 
-      final result = await _client.rpc(
-        'path_b_generate_plan',
-        params: {
-          'v_athlete': athleteId,
-          'v_coach': user.id,
-          'v_target_race_id': null,
-        },
-      );
-
       if (!mounted) return;
-
-      final map = result is Map<String, dynamic>
-          ? result
-          : <String, dynamic>{'success': true, 'message': result.toString()};
-
-      final success = map['success'] == true;
-      final message = (map['message'] ?? 'Operação concluída.').toString();
-
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            success
-                ? 'Solicitação aceita e plano gerado ✅ $message'
-                : 'Solicitação aceita, mas o plano não foi gerado. $message',
-          ),
-        ),
+        const SnackBar(content: Text('Solicitação recusada.')),
       );
-
       await _load();
     } catch (e) {
       if (!mounted) return;
-      setState(() => _loading = false);
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Erro ao aceitar e gerar plano: $e'),
-          duration: const Duration(seconds: 8),
-        ),
-      );
-    }
-  }
-
-  Future<void> _generateForActiveAthlete(String athleteId) async {
-    final user = _client.auth.currentUser;
-    if (user == null) return;
-
-    try {
-      setState(() {
-        _loading = true;
-        _msg = null;
-      });
-
-      final result = await _client.rpc(
-        'path_b_generate_plan',
-        params: {
-          'v_athlete': athleteId,
-          'v_coach': user.id,
-          'v_target_race_id': null,
-        },
-      );
-
-      if (!mounted) return;
-
-      final map = result is Map<String, dynamic>
-          ? result
-          : <String, dynamic>{'success': true, 'message': result.toString()};
-
-      final success = map['success'] == true;
-      final message = (map['message'] ?? 'Operação concluída.').toString();
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            success
-                ? 'Plano gerado com sucesso ✅ $message'
-                : 'Não foi possível gerar o plano. $message',
-          ),
-        ),
-      );
-
-      await _load();
-    } catch (e) {
-      if (!mounted) return;
-      setState(() => _loading = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Erro ao gerar plano: $e'),
-          duration: const Duration(seconds: 8),
-        ),
+        SnackBar(content: Text('Erro ao recusar: $e')),
       );
     }
   }
@@ -292,50 +186,6 @@ class _CoachRequestsScreenState extends State<CoachRequestsScreen>
         .then((_) async {
       await _load();
     });
-  }
-
-  String _displayName(String athleteId) {
-    final prof = _athleteProfilesById[athleteId] ?? {};
-    final fullName = (prof['full_name'] ?? '').toString().trim();
-    if (fullName.isNotEmpty) return fullName;
-
-    final email = (prof['email'] ?? '').toString().trim();
-    if (email.isNotEmpty) return email;
-
-    if (athleteId.length >= 8) {
-      return 'Atleta ${athleteId.substring(0, 8)}';
-    }
-
-    return 'Atleta';
-  }
-
-  String _displayEmail(String athleteId) {
-    final prof = _athleteProfilesById[athleteId] ?? {};
-    return (prof['email'] ?? '').toString().trim();
-  }
-
-  String _raceSummary(String athleteId) {
-    final race = _mainRaceByAthleteId[athleteId];
-    if (race == null) return 'Sem prova alvo planejada';
-
-    final date = (race['race_date'] ?? '').toString();
-    final distance = (race['distance_meters'] ?? '').toString();
-    final priority = (race['priority'] ?? '').toString();
-    final category = (race['calculated_race_category_id'] ?? '').toString();
-    final activity = (race['activity_type_id'] ?? '').toString();
-
-    final dateText = date.length >= 10 ? date.substring(0, 10) : date;
-
-    final parts = <String>[
-      'Prova alvo',
-      if (dateText.isNotEmpty) dateText,
-      if (distance.isNotEmpty) '${distance}m',
-      if (priority.isNotEmpty) 'prioridade $priority',
-      if (category.isNotEmpty) 'cat $category',
-      if (activity.isNotEmpty) 'atividade $activity',
-    ];
-
-    return parts.join(' • ');
   }
 
   Widget _countChip(String label, int value, Color color) {
@@ -362,14 +212,12 @@ class _CoachRequestsScreenState extends State<CoachRequestsScreen>
   }) {
     final athleteId = (relation['athlete_id'] ?? '').toString();
     final relationId = (relation['id'] ?? '').toString();
-    final prof = _athleteProfilesById[athleteId] ?? {};
-    final avatar = (prof['avatar_url'] ?? '').toString();
 
-    final name = _displayName(athleteId);
-    final email = _displayEmail(athleteId);
+    final athleteName = 'Atleta ${athleteId.length >= 8 ? athleteId.substring(0, 8) : athleteId}';
     final counts = _countsByAthleteId[athleteId] ?? {
-      'pending': 0,
+      'planned': 0,
       'published': 0,
+      'completed': 0,
       'total': 0,
     };
 
@@ -379,9 +227,8 @@ class _CoachRequestsScreenState extends State<CoachRequestsScreen>
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            CircleAvatar(
-              backgroundImage: avatar.isNotEmpty ? NetworkImage(avatar) : null,
-              child: avatar.isEmpty ? const Icon(Icons.person) : null,
+            const CircleAvatar(
+              child: Icon(Icons.person),
             ),
             const SizedBox(width: 12),
             Expanded(
@@ -389,24 +236,15 @@ class _CoachRequestsScreenState extends State<CoachRequestsScreen>
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    name,
+                    athleteName,
                     style: const TextStyle(
                       fontWeight: FontWeight.w700,
                       fontSize: 16,
                     ),
                   ),
-                  if (email.isNotEmpty) ...[
-                    const SizedBox(height: 4),
-                    Text(email),
-                  ],
-                  const SizedBox(height: 4),
-                  Text(
-                    'ID: ${athleteId.length >= 8 ? athleteId.substring(0, 8) : athleteId}',
-                    style: const TextStyle(color: Colors.black54, fontSize: 12),
-                  ),
                   const SizedBox(height: 8),
                   Text(
-                    _raceSummary(athleteId),
+                    'Vínculo: ${(relation['role_type'] ?? '').toString()}',
                     style: const TextStyle(fontWeight: FontWeight.w500),
                   ),
                   if (!isPending) ...[
@@ -415,8 +253,9 @@ class _CoachRequestsScreenState extends State<CoachRequestsScreen>
                       spacing: 8,
                       runSpacing: 8,
                       children: [
-                        _countChip('Pendentes', counts['pending'] ?? 0, Colors.orange),
+                        _countChip('Planejados', counts['planned'] ?? 0, Colors.orange),
                         _countChip('Publicados', counts['published'] ?? 0, Colors.green),
+                        _countChip('Concluídos', counts['completed'] ?? 0, Colors.blue),
                         _countChip('Total', counts['total'] ?? 0, Colors.blueGrey),
                       ],
                     ),
@@ -433,27 +272,18 @@ class _CoachRequestsScreenState extends State<CoachRequestsScreen>
                                   : () => _accept(relationId),
                               child: const Text('Aceitar'),
                             ),
-                            FilledButton.tonal(
-                              onPressed: relationId.isEmpty || athleteId.isEmpty
+                            OutlinedButton(
+                              onPressed: relationId.isEmpty
                                   ? null
-                                  : () => _acceptAndGenerate(
-                                        relationId: relationId,
-                                        athleteId: athleteId,
-                                      ),
-                              child: const Text('Aceitar + gerar plano'),
+                                  : () => _reject(relationId),
+                              child: const Text('Recusar'),
                             ),
                           ]
                         : [
-                            FilledButton.tonal(
-                              onPressed: athleteId.isEmpty
-                                  ? null
-                                  : () => _generateForActiveAthlete(athleteId),
-                              child: const Text('Gerar plano'),
-                            ),
                             FilledButton(
                               onPressed: athleteId.isEmpty
                                   ? null
-                                  : () => _openWorkoutReview(athleteId, name),
+                                  : () => _openWorkoutReview(athleteId, athleteName),
                               child: const Text('Ver treinos'),
                             ),
                           ],
@@ -495,7 +325,7 @@ class _CoachRequestsScreenState extends State<CoachRequestsScreen>
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Solicitações de atletas'),
+        title: const Text('Solicitações e atletas'),
         actions: [
           IconButton(
             onPressed: _load,

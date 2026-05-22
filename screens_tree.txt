@@ -1,0 +1,16 @@
+lib/screens/admin_approvals_screen.dart
+lib/screens/athlete_agenda_screen.dart
+lib/screens/athlete_approved_workouts_screen.dart
+lib/screens/athlete_onboarding_screen.dart
+lib/screens/athlete_profile_form_screen.dart
+lib/screens/athlete_recommended_screen.dart
+lib/screens/athlete_search_professionals_screen.dart
+lib/screens/athlete_weekly_availability_edit_screen.dart
+lib/screens/auth_callback_screen.dart
+lib/screens/auth_gate.dart
+lib/screens/coach_athlete_workouts_review_screen.dart
+lib/screens/coach_requests_screen.dart
+lib/screens/coach_workout_edit_screen.dart
+lib/screens/home_router_screen.dart
+lib/screens/home_router_screen.dart.bak
+lib/screens/professional_profile_form_screen.dart

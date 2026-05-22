@@ -12,12 +12,12 @@ class AthleteSearchProfessionalsScreen extends StatefulWidget {
 
 class _AthleteSearchProfessionalsScreenState
     extends State<AthleteSearchProfessionalsScreen> {
-  final _client = Supabase.instance.client;
+  final SupabaseClient _client = Supabase.instance.client;
 
   bool _loading = true;
   String? _msg;
 
-  final _searchController = TextEditingController();
+  final TextEditingController _searchController = TextEditingController();
   String _typeFilter = 'all';
 
   List<Map<String, dynamic>> _rows = [];
@@ -42,21 +42,9 @@ class _AthleteSearchProfessionalsScreenState
 
     try {
       final res = await _client
-          .from('coaches')
-          .select(
-            'id, '
-            'phone_mobile, '
-            'professional_type, '
-            'specialties, '
-            'cref_number, '
-            'license_number, '
-            'social_instagram, '
-            'social_linkedin, '
-            'verification_status, '
-            'profiles(id, full_name, email, avatar_url, user_role)',
-          )
-          .eq('verification_status', 'verified')
-          .order('updated_at', ascending: false);
+          .from('v_professionals_marketplace')
+          .select()
+          .order('display_name', ascending: true);
 
       _rows = (res as List).cast<Map<String, dynamic>>();
     } catch (e) {
@@ -74,13 +62,13 @@ class _AthleteSearchProfessionalsScreenState
     bool containsText(String text) => text.toLowerCase().contains(q);
 
     return _rows.where((r) {
-      final prof = (r['profiles'] as Map<String, dynamic>?) ?? {};
-
-      final name = (prof['full_name'] ?? '').toString();
-      final email = (prof['email'] ?? '').toString();
-      final type = (r['professional_type'] ?? '').toString();
-      final phone = (r['phone_mobile'] ?? '').toString();
-      final reg = _regNumberRaw(r);
+      final name =
+          (r['display_name'] ?? r['full_name'] ?? '').toString().trim();
+      final email = (r['email'] ?? '').toString().trim();
+      final type = (r['professional_type'] ?? '').toString().trim();
+      final phone = (r['phone_mobile'] ?? '').toString().trim();
+      final city = (r['address_city'] ?? '').toString().trim();
+      final state = (r['address_state'] ?? '').toString().trim();
       final social = _socialRaw(r);
       final specialties = _specialtiesList(r['specialties']).join(' ');
 
@@ -93,7 +81,8 @@ class _AthleteSearchProfessionalsScreenState
               containsText(email) ||
               containsText(type) ||
               containsText(phone) ||
-              containsText(reg) ||
+              containsText(city) ||
+              containsText(state) ||
               containsText(social) ||
               containsText(specialties);
 
@@ -101,15 +90,19 @@ class _AthleteSearchProfessionalsScreenState
     }).toList();
   }
 
-  Future<void> _selectCoach(String coachId, String professionalName) async {
+  Future<void> _selectProfessional({
+    required String professionalId,
+    required String professionalName,
+    required String professionalType,
+  }) async {
     final user = _client.auth.currentUser;
     if (user == null) return;
 
     try {
       final existing = await _client
           .from('coach_athlete_relation')
-          .select('id, status')
-          .eq('coach_id', coachId)
+          .select('id, status, role_type')
+          .eq('coach_id', professionalId)
           .eq('athlete_id', user.id)
           .maybeSingle();
 
@@ -128,10 +121,10 @@ class _AthleteSearchProfessionalsScreenState
       }
 
       await _client.from('coach_athlete_relation').insert({
-        'coach_id': coachId,
+        'coach_id': professionalId,
         'athlete_id': user.id,
         'status': 'pending',
-        'role_type': 'head_coach',
+        'role_type': professionalType,
       });
 
       if (!mounted) return;
@@ -146,9 +139,7 @@ class _AthleteSearchProfessionalsScreenState
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(
-            'Não foi possível enviar a solicitação. Detalhe: $e',
-          ),
+          content: Text('Não foi possível enviar a solicitação. Detalhe: $e'),
         ),
       );
     }
@@ -175,9 +166,8 @@ class _AthleteSearchProfessionalsScreenState
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(
-          text.isEmpty ? 'Sem contato disponível' : 'Contato copiado ✅',
-        ),
+        content:
+            Text(text.isEmpty ? 'Sem contato disponível' : 'Contato copiado ✅'),
       ),
     );
   }
@@ -194,6 +184,8 @@ class _AthleteSearchProfessionalsScreenState
     if (text.isEmpty) return [];
 
     return text
+        .replaceAll('{', '')
+        .replaceAll('}', '')
         .split(',')
         .map((e) => e.trim())
         .where((e) => e.isNotEmpty)
@@ -203,30 +195,24 @@ class _AthleteSearchProfessionalsScreenState
   String _typeLabel(String value) {
     switch (value.trim().toLowerCase()) {
       case 'coach':
-        return 'Treinador';
+        return 'Coach esportivo';
+      case 'running_coach':
+        return 'Treinador de corrida';
       case 'nutritionist':
         return 'Nutricionista';
+      case 'strength_coach':
+        return 'Preparador físico';
+      case 'physiotherapist':
+        return 'Fisioterapeuta';
+      case 'swim_coach':
+        return 'Treinador de natação';
+      case 'triathlon_coach':
+        return 'Treinador de triathlon';
+      case 'trail_coach':
+        return 'Treinador de trail';
       default:
         return value.isEmpty ? 'Profissional' : value;
     }
-  }
-
-  String _regNumberRaw(Map<String, dynamic> r) {
-    final cref = (r['cref_number'] ?? '').toString().trim();
-    final license = (r['license_number'] ?? '').toString().trim();
-
-    if (cref.isNotEmpty) return cref;
-    if (license.isNotEmpty) return license;
-    return '';
-  }
-
-  String _regNumberLabel(Map<String, dynamic> r) {
-    final cref = (r['cref_number'] ?? '').toString().trim();
-    final license = (r['license_number'] ?? '').toString().trim();
-
-    if (cref.isNotEmpty) return 'CREF: $cref';
-    if (license.isNotEmpty) return 'Registro: $license';
-    return 'Registro não informado';
   }
 
   String _socialRaw(Map<String, dynamic> r) {
@@ -245,15 +231,22 @@ class _AthleteSearchProfessionalsScreenState
     if (ig.isNotEmpty) {
       return ig.startsWith('@') ? ig : '@$ig';
     }
-
     if (li.isNotEmpty) return li;
-
     return 'Não informado';
+  }
+
+  String _cityState(Map<String, dynamic> r) {
+    final city = (r['address_city'] ?? '').toString().trim();
+    final state = (r['address_state'] ?? '').toString().trim();
+
+    if (city.isEmpty && state.isEmpty) return 'Local não informado';
+    if (city.isNotEmpty && state.isNotEmpty) return '$city - $state';
+    return city.isNotEmpty ? city : state;
   }
 
   Color _statusColor(String status) {
     switch (status.trim().toLowerCase()) {
-      case 'verified':
+      case 'approved':
         return Colors.green;
       case 'pending':
         return Colors.orange;
@@ -316,8 +309,7 @@ class _AthleteSearchProfessionalsScreenState
                   ),
                   const SizedBox(height: 8),
                   const Text(
-                    'Encontre treinador ou nutricionista.\n'
-                    'O contato e a contratação acontecem fora do app. Depois, selecione o profissional aqui para liberar o vínculo esportivo no Trinium.',
+                    'Encontre treinadores, nutricionistas, fisioterapeutas e outros profissionais.\nO contato e a contratação acontecem fora do app. Depois, selecione o profissional aqui para formalizar o vínculo esportivo no Trinium.',
                     textAlign: TextAlign.center,
                     style: TextStyle(
                       fontSize: 15,
@@ -334,7 +326,7 @@ class _AthleteSearchProfessionalsScreenState
                           onChanged: (_) => setState(() {}),
                           decoration: InputDecoration(
                             labelText:
-                                'Buscar por nome, especialidade, e-mail, telefone ou registro',
+                                'Buscar por nome, especialidade, e-mail, telefone ou cidade',
                             prefixIcon: const Icon(Icons.search),
                             border: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(14),
@@ -344,9 +336,9 @@ class _AthleteSearchProfessionalsScreenState
                       ),
                       const SizedBox(width: 12),
                       SizedBox(
-                        width: 220,
+                        width: 240,
                         child: DropdownButtonFormField<String>(
-                          value: _typeFilter,
+                          initialValue: _typeFilter,
                           decoration: InputDecoration(
                             labelText: 'Tipo',
                             border: OutlineInputBorder(
@@ -360,11 +352,35 @@ class _AthleteSearchProfessionalsScreenState
                             ),
                             DropdownMenuItem(
                               value: 'coach',
-                              child: Text('Treinador'),
+                              child: Text('Coach esportivo'),
+                            ),
+                            DropdownMenuItem(
+                              value: 'running_coach',
+                              child: Text('Treinador de corrida'),
                             ),
                             DropdownMenuItem(
                               value: 'nutritionist',
                               child: Text('Nutricionista'),
+                            ),
+                            DropdownMenuItem(
+                              value: 'strength_coach',
+                              child: Text('Preparador físico'),
+                            ),
+                            DropdownMenuItem(
+                              value: 'physiotherapist',
+                              child: Text('Fisioterapeuta'),
+                            ),
+                            DropdownMenuItem(
+                              value: 'swim_coach',
+                              child: Text('Treinador de natação'),
+                            ),
+                            DropdownMenuItem(
+                              value: 'triathlon_coach',
+                              child: Text('Treinador de triathlon'),
+                            ),
+                            DropdownMenuItem(
+                              value: 'trail_coach',
+                              child: Text('Treinador de trail'),
                             ),
                           ],
                           onChanged: (value) {
@@ -432,20 +448,17 @@ class _AthleteSearchProfessionalsScreenState
                   crossAxisCount: crossAxisCount,
                   crossAxisSpacing: 16,
                   mainAxisSpacing: 16,
-                  mainAxisExtent: 360,
+                  mainAxisExtent: 380,
                 ),
                 itemBuilder: (context, index) {
                   final r = list[index];
-                  final prof =
-                      (r['profiles'] as Map<String, dynamic>?) ?? {};
 
-                  final name =
-                      (prof['full_name'] ?? 'Profissional').toString();
-                  final email = (prof['email'] ?? '').toString();
-                  final avatar = (prof['avatar_url'] ?? '').toString();
+                  final name = (r['display_name'] ?? r['full_name'] ?? 'Profissional')
+                      .toString();
+                  final email = (r['email'] ?? '').toString();
+                  final avatar = (r['avatar_url'] ?? '').toString();
                   final phone = (r['phone_mobile'] ?? '').toString();
-                  final type =
-                      (r['professional_type'] ?? '').toString().trim();
+                  final type = (r['professional_type'] ?? '').toString().trim();
                   final verificationStatus =
                       (r['verification_status'] ?? '').toString().trim();
                   final specialties = _specialtiesList(r['specialties']);
@@ -456,21 +469,21 @@ class _AthleteSearchProfessionalsScreenState
                     phone: phone,
                     avatarUrl: avatar,
                     typeLabel: _typeLabel(type),
-                    regLabel: _regNumberLabel(r),
+                    locationLabel: _cityState(r),
                     socialLabel: _socialLabel(r),
                     specialties: specialties,
-                    statusLabel: verificationStatus.isEmpty
-                        ? 'Sem status'
-                        : verificationStatus,
+                    statusLabel:
+                        verificationStatus.isEmpty ? 'Sem status' : verificationStatus,
                     statusColor: _statusColor(verificationStatus),
                     onCopyContact: () => _copyContact(
                       email: email,
                       phone: phone,
                       social: _socialRaw(r),
                     ),
-                    onSelect: () => _selectCoach(
-                      r['id'].toString(),
-                      name,
+                    onSelect: () => _selectProfessional(
+                      professionalId: r['id'].toString(),
+                      professionalName: name,
+                      professionalType: type.isEmpty ? 'coach' : type,
                     ),
                   );
                 },
@@ -488,7 +501,7 @@ class _ProfessionalCard extends StatelessWidget {
   final String phone;
   final String avatarUrl;
   final String typeLabel;
-  final String regLabel;
+  final String locationLabel;
   final String socialLabel;
   final List<String> specialties;
   final String statusLabel;
@@ -502,7 +515,7 @@ class _ProfessionalCard extends StatelessWidget {
     required this.phone,
     required this.avatarUrl,
     required this.typeLabel,
-    required this.regLabel,
+    required this.locationLabel,
     required this.socialLabel,
     required this.specialties,
     required this.statusLabel,
@@ -620,8 +633,8 @@ class _ProfessionalCard extends StatelessWidget {
               ),
             const SizedBox(height: 16),
             _InfoRow(
-              icon: Icons.badge_outlined,
-              text: regLabel,
+              icon: Icons.location_on_outlined,
+              text: locationLabel,
             ),
             const SizedBox(height: 8),
             _InfoRow(
