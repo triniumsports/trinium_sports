@@ -1,23 +1,26 @@
-# DECISIONS
+# DECISIONS — TRINIUM SPORTS
 
-## Decisões vigentes
+## Decisão
+Abandonar temporariamente o fluxo centrado no motor automático como núcleo do MVP.
 
-1. A tabela oficial do contexto do atleta é `public.athletes`.
-2. A tabela oficial do calendário de provas é `public.target_races`.
-3. Para provas multiesporte, usar `target_race_segments` e fallback em `race_segments`.
-4. O atleta só vê treinos publicados.
-5. O treinador continua sendo o revisor final do motor.
-6. O motor é peça central do produto.
-7. A próxima prioridade estrutural é tornar o motor calendar-aware.
+## Motivo
+A complexidade do motor estava travando a evolução do produto e dificultando a entrega do fluxo principal ao usuário final.
 
-## Atualização — disponibilidade semanal do atleta
-A disponibilidade semanal real do atleta será modelada em `weekly_constraints` com suporte a:
-- `slot_order`
-- `max_duration_sec`
-- `is_primary`
-- `can_pair_same_day`
+## Nova decisão
+O MVP passa a ser centrado em:
+- conexão atleta ↔ profissional
+- criação manual de treinos
+- revisão/publicação
+- agenda e acompanhamento
+- sincronização futura com relógios
 
-Objetivo:
-- representar a rotina real de treinadores e atletas
-- permitir até 2 opções/modalidades por dia
-- permitir que o motor use tempo disponível e modalidade disponível como restrição real
+## Decisão estrutural
+Os steps do treino devem ser armazenados já em formato suficientemente estruturado para futura exportação para relógios.
+
+## Decisão de dados
+A base deve suportar dois sentidos:
+1. envio do treino estruturado para relógio
+2. retorno do realizado pelo atleta para alimentar a base
+
+## Resultado
+A arquitetura atual do MVP ficou mais simples, mais rastreável e mais alinhada com a operação real de treinadores.

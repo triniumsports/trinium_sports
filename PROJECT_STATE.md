@@ -1,38 +1,60 @@
-# PROJECT_STATE
+# PROJECT STATE — TRINIUM SPORTS
 
-## Projeto
-TRINIUM SPORTS
+## Status atual
+MVP redirecionado com sucesso do modelo centrado no motor para um modelo centrado em:
+- marketplace de profissionais
+- vínculo atleta ↔ profissional
+- criação manual de treinos
+- revisão/publicação
+- agenda do atleta
+- base preparada para sincronização futura com relógios
 
-## Estado atual consolidado
+## Backend
+Foram saneadas e/ou padronizadas as estruturas:
+- coaches
+- coach_athlete_relation
+- prescribed_workouts
+- prescribed_workout_steps
+- v_professionals_marketplace
+- v_athlete_professional_links
+- v_prescribed_workouts_mvp
 
-### Backend
-- Supabase funcional
-- auth funcional
-- vínculo atleta ↔ treinador funcional
-- geração de treinos funcional
-- publicação de treinos funcional
+Também foram criados os campos mínimos para sincronização e retorno de execução:
+- sync_status
+- sync_provider
+- external_workout_id
+- execution_status
+- executed_at
+- actual_duration_sec
+- actual_rpe
+- completion_source
+- workout_execution_logs
+- funções auxiliares para marcar sync e registrar execução
 
-### Frontend
-- marketplace funcional
-- aceite de atletas funcional
-- geração de treinos funcional
-- revisão/publicação funcional
-- dashboard do treinador em evolução avançada
-- contexto do atleta já validado via tabela `athletes`
+## Frontend
+Fluxo principal ajustado:
+- home_router_screen.dart
+- athlete_search_professionals_screen.dart
+- coach_requests_screen.dart
+- coach_athlete_workouts_review_screen.dart
+- athlete_agenda_screen.dart
+- athlete_profile_form_screen.dart
+- professional_profile_form_screen.dart
+- coach_workout_edit_screen.dart
+- coach_create_workout_screen.dart
 
-### Motor
-- funcional
-- ainda orientado a uma prova por execução
-- próxima grande evolução: calendar-aware planning
+## Fluxo atual do MVP
+1. atleta faz login
+2. atleta completa perfil
+3. atleta busca profissional no marketplace
+4. atleta solicita vínculo
+5. profissional aceita vínculo
+6. profissional cria treino manual
+7. profissional revisa/edita treino
+8. profissional publica treino
+9. atleta visualiza treino na agenda
+10. atleta marca treino como concluído
+11. base já está preparada para futura sincronização com relógio e ingestão do executado
 
----
-
-## Próxima etapa prioritária
-Evoluir o motor de geração para considerar o calendário completo do atleta.
-
-## Nova direção confirmada
-O motor deverá usar a disponibilidade real do atleta, modelada em `weekly_constraints`, incluindo:
-- até 2 opções por dia
-- modalidade por slot
-- duração disponível
-- possibilidade de dupla sessão
+## Situação do analyze
+Projeto compilando com warnings antigos, sem erro bloqueante.

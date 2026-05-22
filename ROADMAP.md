@@ -1,27 +1,28 @@
-# ROADMAP
+# ROADMAP — TRINIUM SPORTS
 
-## Etapa atual
-Fechamento da documentação de continuidade + preparação para evolução do motor
+## Concluído
+- saneamento backend do MVP
+- marketplace de profissionais
+- vínculo atleta ↔ profissional
+- revisão/publicação de treinos
+- agenda do atleta
+- criação manual de treino
+- estrutura mínima para sincronização futura com relógios
+- estrutura mínima para retorno do executado pelo atleta
 
-## Próximo bloco prioritário
-### Motor de geração
-- [ ] tornar calendar-aware
-- [ ] considerar provas A, B e C
-- [ ] melhorar distribuição entre base/build/peak/taper/race
-- [ ] melhorar distribuição por atividade
-- [ ] respeitar melhor calendário completo do atleta
+## Próximos passos imediatos
+1. testar fluxo funcional completo no navegador
+2. ajustar tela de criação/edição de treino com mais ergonomia
+3. adicionar criação de steps com mais inteligência visual
+4. exibir sync_status e execution_status no app
+5. preparar integração futura com Garmin/relógios
+6. tratar ingestão automática do executado
+7. limpar warnings antigos do frontend
 
-## Depois
-### Frontend de revisão
-- [ ] edição avançada dos steps
-- [ ] adicionar step
-- [ ] excluir step
-- [ ] editar tempo
-- [ ] editar distância
-- [ ] editar zona
-- [ ] editar observações
-
-### Disponibilidade real do atleta
-- [ ] evoluir `weekly_constraints` com slot e duração
-- [ ] criar tela de edição da disponibilidade semanal
-- [ ] conectar o motor à disponibilidade real do atleta
+## Próximos passos de produto
+- biblioteca de treinos por profissional
+- duplicar treino
+- copiar semana
+- templates estruturados
+- métricas premium do atleta dentro do app
+- histórico consolidado de execução
