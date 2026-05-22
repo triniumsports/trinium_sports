@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'coach_athlete_workouts_review_screen.dart';
+import 'coach_create_workout_screen.dart';
 
 class CoachRequestsScreen extends StatefulWidget {
   const CoachRequestsScreen({super.key});
@@ -22,6 +23,7 @@ class _CoachRequestsScreenState extends State<CoachRequestsScreen>
   List<Map<String, dynamic>> _pendingRelations = [];
   List<Map<String, dynamic>> _activeRelations = [];
   Map<String, Map<String, int>> _countsByAthleteId = {};
+  Map<String, Map<String, dynamic>> _athleteProfiles = {};
 
   @override
   void initState() {
@@ -35,6 +37,8 @@ class _CoachRequestsScreenState extends State<CoachRequestsScreen>
     _tabController.dispose();
     super.dispose();
   }
+
+  String _s(dynamic v) => v == null ? '' : v.toString().trim();
 
   Future<void> _load() async {
     final user = _client.auth.currentUser;
@@ -61,16 +65,27 @@ class _CoachRequestsScreenState extends State<CoachRequestsScreen>
 
       final athleteIds = <String>{
         ..._pendingRelations
-            .map((r) => (r['athlete_id'] ?? '').toString())
+            .map((r) => _s(r['athlete_id']))
             .where((x) => x.isNotEmpty),
         ..._activeRelations
-            .map((r) => (r['athlete_id'] ?? '').toString())
+            .map((r) => _s(r['athlete_id']))
             .where((x) => x.isNotEmpty),
       }.toList();
 
-      if (athleteIds.isEmpty) {
-        _countsByAthleteId = {};
-      } else {
+      _athleteProfiles = {};
+      if (athleteIds.isNotEmpty) {
+        final athleteProfiles = await _client
+            .from('profiles')
+            .select('id, full_name, email, avatar_url')
+            .filter('id', 'in', '(${athleteIds.map((e) => '"$e"').join(',')})');
+
+        for (final row in (athleteProfiles as List).cast<Map<String, dynamic>>()) {
+          final id = _s(row['id']);
+          if (id.isNotEmpty) {
+            _athleteProfiles[id] = row;
+          }
+        }
+
         final workouts = await _client
             .from('v_prescribed_workouts_mvp')
             .select('athlete_id, status, validation_status')
@@ -78,9 +93,9 @@ class _CoachRequestsScreenState extends State<CoachRequestsScreen>
 
         final countMap = <String, Map<String, int>>{};
         for (final row in (workouts as List).cast<Map<String, dynamic>>()) {
-          final athleteId = (row['athlete_id'] ?? '').toString();
-          final status = (row['status'] ?? '').toString();
-          final validationStatus = (row['validation_status'] ?? '').toString();
+          final athleteId = _s(row['athlete_id']);
+          final status = _s(row['status']);
+          final validationStatus = _s(row['validation_status']);
 
           countMap.putIfAbsent(athleteId, () => {
                 'planned': 0,
@@ -94,7 +109,8 @@ class _CoachRequestsScreenState extends State<CoachRequestsScreen>
 
           if (status == 'planned' ||
               validationStatus == 'draft' ||
-              validationStatus == 'review') {
+              validationStatus == 'review' ||
+              validationStatus == 'approved') {
             countMap[athleteId]!['planned'] =
                 (countMap[athleteId]!['planned'] ?? 0) + 1;
           }
@@ -111,6 +127,8 @@ class _CoachRequestsScreenState extends State<CoachRequestsScreen>
         }
 
         _countsByAthleteId = countMap;
+      } else {
+        _countsByAthleteId = {};
       }
     } catch (e) {
       _msg = 'Erro ao carregar solicitações: $e';
@@ -188,6 +206,21 @@ class _CoachRequestsScreenState extends State<CoachRequestsScreen>
     });
   }
 
+  void _openCreateWorkout(String athleteId, String athleteName) {
+    Navigator.of(context)
+        .push(
+      MaterialPageRoute(
+        builder: (_) => CoachCreateWorkoutScreen(
+          initialAthleteId: athleteId,
+          initialAthleteName: athleteName,
+        ),
+      ),
+    )
+        .then((_) async {
+      await _load();
+    });
+  }
+
   Widget _countChip(String label, int value, Color color) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
@@ -210,10 +243,16 @@ class _CoachRequestsScreenState extends State<CoachRequestsScreen>
     Map<String, dynamic> relation, {
     required bool isPending,
   }) {
-    final athleteId = (relation['athlete_id'] ?? '').toString();
-    final relationId = (relation['id'] ?? '').toString();
+    final athleteId = _s(relation['athlete_id']);
+    final relationId = _s(relation['id']);
 
-    final athleteName = 'Atleta ${athleteId.length >= 8 ? athleteId.substring(0, 8) : athleteId}';
+    final athleteProfile = _athleteProfiles[athleteId];
+    final athleteName = _s(athleteProfile?['full_name']).isNotEmpty
+        ? _s(athleteProfile?['full_name'])
+        : 'Atleta';
+    final athleteEmail = _s(athleteProfile?['email']);
+    final athleteAvatar = _s(athleteProfile?['avatar_url']);
+
     final counts = _countsByAthleteId[athleteId] ?? {
       'planned': 0,
       'published': 0,
@@ -227,8 +266,10 @@ class _CoachRequestsScreenState extends State<CoachRequestsScreen>
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const CircleAvatar(
-              child: Icon(Icons.person),
+            CircleAvatar(
+              backgroundImage:
+                  athleteAvatar.isNotEmpty ? NetworkImage(athleteAvatar) : null,
+              child: athleteAvatar.isEmpty ? const Icon(Icons.person) : null,
             ),
             const SizedBox(width: 12),
             Expanded(
@@ -242,9 +283,16 @@ class _CoachRequestsScreenState extends State<CoachRequestsScreen>
                       fontSize: 16,
                     ),
                   ),
+                  if (athleteEmail.isNotEmpty) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      athleteEmail,
+                      style: const TextStyle(color: Colors.black54),
+                    ),
+                  ],
                   const SizedBox(height: 8),
                   Text(
-                    'Vínculo: ${(relation['role_type'] ?? '').toString()}',
+                    'Vínculo: ${_s(relation['role_type'])}',
                     style: const TextStyle(fontWeight: FontWeight.w500),
                   ),
                   if (!isPending) ...[
@@ -253,10 +301,26 @@ class _CoachRequestsScreenState extends State<CoachRequestsScreen>
                       spacing: 8,
                       runSpacing: 8,
                       children: [
-                        _countChip('Planejados', counts['planned'] ?? 0, Colors.orange),
-                        _countChip('Publicados', counts['published'] ?? 0, Colors.green),
-                        _countChip('Concluídos', counts['completed'] ?? 0, Colors.blue),
-                        _countChip('Total', counts['total'] ?? 0, Colors.blueGrey),
+                        _countChip(
+                          'Planejados',
+                          counts['planned'] ?? 0,
+                          Colors.orange,
+                        ),
+                        _countChip(
+                          'Publicados',
+                          counts['published'] ?? 0,
+                          Colors.green,
+                        ),
+                        _countChip(
+                          'Concluídos',
+                          counts['completed'] ?? 0,
+                          Colors.blue,
+                        ),
+                        _countChip(
+                          'Total',
+                          counts['total'] ?? 0,
+                          Colors.blueGrey,
+                        ),
                       ],
                     ),
                   ],
@@ -280,10 +344,22 @@ class _CoachRequestsScreenState extends State<CoachRequestsScreen>
                             ),
                           ]
                         : [
+                            FilledButton.tonal(
+                              onPressed: athleteId.isEmpty
+                                  ? null
+                                  : () => _openCreateWorkout(
+                                        athleteId,
+                                        athleteName,
+                                      ),
+                              child: const Text('Criar treino'),
+                            ),
                             FilledButton(
                               onPressed: athleteId.isEmpty
                                   ? null
-                                  : () => _openWorkoutReview(athleteId, athleteName),
+                                  : () => _openWorkoutReview(
+                                        athleteId,
+                                        athleteName,
+                                      ),
                               child: const Text('Ver treinos'),
                             ),
                           ],

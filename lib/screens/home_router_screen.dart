@@ -6,10 +6,11 @@ import 'admin_approvals_screen.dart';
 import 'athlete_approved_workouts_screen.dart';
 import 'athlete_profile_form_screen.dart';
 import 'athlete_search_professionals_screen.dart';
+import 'athlete_weekly_availability_edit_screen.dart';
 import 'auth_gate.dart';
+import 'coach_create_workout_screen.dart';
 import 'coach_requests_screen.dart';
 import 'professional_profile_form_screen.dart';
-import 'athlete_weekly_availability_edit_screen.dart';
 
 class HomeRouterScreen extends StatefulWidget {
   const HomeRouterScreen({super.key});
@@ -19,7 +20,8 @@ class HomeRouterScreen extends StatefulWidget {
 }
 
 class _HomeRouterScreenState extends State<HomeRouterScreen> {
-  final _authService = AuthService();
+  final AuthService _authService = AuthService();
+  final SupabaseClient _client = Supabase.instance.client;
 
   bool _loading = true;
   String? _error;
@@ -39,88 +41,14 @@ class _HomeRouterScreenState extends State<HomeRouterScreen> {
       }
 
       final role = (profile['user_role'] ?? '').toString().trim().toLowerCase();
-      final fullName = (profile['full_name'] ?? '').toString();
+      final fullName = (profile['full_name'] ?? '').toString().trim();
 
       if (role == 'admin') {
         _resolved = const AdminApprovalsScreen();
       } else if (role == 'athlete') {
-        final user = Supabase.instance.client.auth.currentUser;
-        if (user == null) {
-          throw Exception('Usuário não autenticado.');
-        }
-
-        final athlete = await Supabase.instance.client
-            .from('athletes')
-            .select(
-              'birth_date,gender,height_cm,weight_kg,resting_hr,max_hr,experience_level',
-            )
-            .eq('id', user.id)
-            .maybeSingle();
-
-        if (athlete == null) {
-          _resolved = const AthleteProfileFormScreen();
-        } else {
-          final bd = (athlete['birth_date'] ?? '').toString().trim();
-          final g = (athlete['gender'] ?? '').toString().trim();
-          final exp = (athlete['experience_level'] ?? '').toString().trim();
-
-          final h = athlete['height_cm'];
-          final w = athlete['weight_kg'];
-          final rhr = athlete['resting_hr'];
-          final mhr = athlete['max_hr'];
-
-          final isComplete = bd.isNotEmpty &&
-              g.isNotEmpty &&
-              exp.isNotEmpty &&
-              h != null &&
-              w != null &&
-              rhr != null &&
-              mhr != null &&
-              (h is num && h > 0) &&
-              (w is num && w > 0) &&
-              (rhr is num && rhr > 0) &&
-              (mhr is num && mhr > 0);
-
-          _resolved =
-              isComplete ? AthleteHomeScreen(fullName: fullName) : const AthleteProfileFormScreen();
-        }
+        await _resolveAthlete(fullName);
       } else if (role == 'coach') {
-        final user = Supabase.instance.client.auth.currentUser;
-        if (user == null) {
-          throw Exception('Usuário não autenticado.');
-        }
-
-        final coach = await Supabase.instance.client
-            .from('coaches')
-            .select(
-              'professional_type,cref_number,license_number,phone_mobile,address_zip_code,specialties,verification_status',
-            )
-            .eq('id', user.id)
-            .maybeSingle();
-
-        if (coach == null) {
-          _resolved = const ProfessionalProfileFormScreen();
-        } else {
-          final professionalType =
-              (coach['professional_type'] ?? '').toString().trim();
-          final cref = (coach['cref_number'] ?? '').toString().trim();
-          final license = (coach['license_number'] ?? '').toString().trim();
-          final phone = (coach['phone_mobile'] ?? '').toString().trim();
-          final zip = (coach['address_zip_code'] ?? '').toString().trim();
-          final specs = coach['specialties'];
-          final specsCount = specs is List ? specs.length : 0;
-
-          final hasRegistration = cref.isNotEmpty || license.isNotEmpty;
-
-          final isComplete = professionalType.isNotEmpty &&
-              hasRegistration &&
-              phone.isNotEmpty &&
-              zip.isNotEmpty &&
-              specsCount > 0;
-
-          _resolved =
-              isComplete ? CoachHomeScreen(fullName: fullName) : const ProfessionalProfileFormScreen();
-        }
+        await _resolveProfessional(fullName);
       } else {
         throw Exception('user_role inválido: $role');
       }
@@ -131,6 +59,104 @@ class _HomeRouterScreenState extends State<HomeRouterScreen> {
         setState(() => _loading = false);
       }
     }
+  }
+
+  Future<void> _resolveAthlete(String fullName) async {
+    final user = _client.auth.currentUser;
+    if (user == null) {
+      throw Exception('Usuário não autenticado.');
+    }
+
+    final athlete = await _client
+        .from('athletes')
+        .select(
+          'birth_date, gender, height_cm, weight_kg, resting_hr, max_hr, experience_level',
+        )
+        .eq('id', user.id)
+        .maybeSingle();
+
+    if (athlete == null) {
+      _resolved = const AthleteProfileFormScreen();
+      return;
+    }
+
+    final birthDate = (athlete['birth_date'] ?? '').toString().trim();
+    final gender = (athlete['gender'] ?? '').toString().trim();
+    final experience = (athlete['experience_level'] ?? '').toString().trim();
+
+    final height = athlete['height_cm'];
+    final weight = athlete['weight_kg'];
+    final restingHr = athlete['resting_hr'];
+    final maxHr = athlete['max_hr'];
+
+    final isComplete = birthDate.isNotEmpty &&
+        gender.isNotEmpty &&
+        experience.isNotEmpty &&
+        height is num &&
+        height > 0 &&
+        weight is num &&
+        weight > 0 &&
+        restingHr is num &&
+        restingHr > 0 &&
+        maxHr is num &&
+        maxHr > 0;
+
+    _resolved = isComplete
+        ? AthleteHomeScreen(fullName: fullName.isEmpty ? 'Atleta' : fullName)
+        : const AthleteProfileFormScreen();
+  }
+
+  Future<void> _resolveProfessional(String fullName) async {
+    final user = _client.auth.currentUser;
+    if (user == null) {
+      throw Exception('Usuário não autenticado.');
+    }
+
+    final coach = await _client
+        .from('coaches')
+        .select(
+          'professional_type, cref_number, license_number, phone_mobile, address_zip_code, specialties, verification_status, display_name',
+        )
+        .eq('id', user.id)
+        .maybeSingle();
+
+    if (coach == null) {
+      _resolved = const ProfessionalProfileFormScreen();
+      return;
+    }
+
+    final professionalType =
+        (coach['professional_type'] ?? '').toString().trim();
+    final cref = (coach['cref_number'] ?? '').toString().trim();
+    final license = (coach['license_number'] ?? '').toString().trim();
+    final phone = (coach['phone_mobile'] ?? '').toString().trim();
+    final zip = (coach['address_zip_code'] ?? '').toString().trim();
+    final verificationStatus =
+        (coach['verification_status'] ?? '').toString().trim();
+
+    final specialtiesRaw = coach['specialties'];
+    final specialtiesCount = specialtiesRaw is List
+        ? specialtiesRaw.where((e) => '$e'.trim().isNotEmpty).length
+        : 0;
+
+    final hasRegistration = cref.isNotEmpty || license.isNotEmpty;
+
+    final isComplete = professionalType.isNotEmpty &&
+        hasRegistration &&
+        phone.isNotEmpty &&
+        zip.isNotEmpty &&
+        specialtiesCount > 0 &&
+        verificationStatus.isNotEmpty;
+
+    final displayName = (coach['display_name'] ?? '').toString().trim();
+
+    _resolved = isComplete
+        ? ProfessionalHomeScreen(
+            fullName: displayName.isNotEmpty
+                ? displayName
+                : (fullName.isEmpty ? 'Profissional' : fullName),
+          )
+        : const ProfessionalProfileFormScreen();
   }
 
   @override
@@ -157,13 +183,13 @@ class _HomeRouterScreenState extends State<HomeRouterScreen> {
 
 class BaseHomeScaffold extends StatelessWidget {
   final String title;
-  final String message;
+  final String subtitle;
   final List<Widget> actions;
 
   const BaseHomeScaffold({
     super.key,
     required this.title,
-    required this.message,
+    required this.subtitle,
     required this.actions,
   });
 
@@ -180,6 +206,7 @@ class BaseHomeScaffold extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: const Color(0xFFF4F6FA),
       appBar: AppBar(
         title: Text(title),
         actions: [
@@ -191,29 +218,41 @@ class BaseHomeScaffold extends StatelessWidget {
       ),
       body: Center(
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 760),
-          child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Text(message, textAlign: TextAlign.center),
-                const SizedBox(height: 20),
-                Wrap(
-                  spacing: 12,
-                  runSpacing: 12,
-                  alignment: WrapAlignment.center,
-                  children: actions,
+          constraints: const BoxConstraints(maxWidth: 1000),
+          child: ListView(
+            padding: const EdgeInsets.all(20),
+            children: [
+              Container(
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(20),
+                  color: Colors.white,
+                  boxShadow: const [
+                    BoxShadow(
+                      blurRadius: 18,
+                      offset: Offset(0, 8),
+                      color: Color(0x14000000),
+                    ),
+                  ],
                 ),
-              ],
-            ),
+                child: Text(
+                  subtitle,
+                  style: const TextStyle(fontSize: 16, height: 1.5),
+                ),
+              ),
+              const SizedBox(height: 16),
+              Wrap(
+                spacing: 12,
+                runSpacing: 12,
+                children: actions,
+              ),
+            ],
           ),
         ),
       ),
     );
   }
 }
-
 
 class AthleteHomeScreen extends StatelessWidget {
   final String fullName;
@@ -230,6 +269,11 @@ class AthleteHomeScreen extends StatelessWidget {
           TextButton(
             onPressed: () async {
               await Supabase.instance.client.auth.signOut();
+              if (!context.mounted) return;
+              Navigator.of(context).pushAndRemoveUntil(
+                MaterialPageRoute(builder: (_) => const AuthGate()),
+                (route) => false,
+              );
             },
             child: const Text('Sair'),
           ),
@@ -238,20 +282,7 @@ class AthleteHomeScreen extends StatelessWidget {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(18),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(18),
-              color: Colors.white,
-              boxShadow: const [
-                BoxShadow(
-                  blurRadius: 12,
-                  offset: Offset(0, 6),
-                  color: Color(0x12000000),
-                ),
-              ],
-            ),
+          _HomeCard(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -264,26 +295,13 @@ class AthleteHomeScreen extends StatelessWidget {
                 ),
                 const SizedBox(height: 8),
                 const Text(
-                  'Organize sua jornada esportiva, atualize sua disponibilidade e acompanhe os treinos publicados pelo seu treinador.',
+                  'Conecte-se com profissionais, organize seus treinos e acompanhe sua evolução esportiva em um só lugar.',
                 ),
               ],
             ),
           ),
           const SizedBox(height: 16),
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(18),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(18),
-              color: Colors.white,
-              boxShadow: const [
-                BoxShadow(
-                  blurRadius: 12,
-                  offset: Offset(0, 6),
-                  color: Color(0x12000000),
-                ),
-              ],
-            ),
+          _HomeCard(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -296,14 +314,15 @@ class AthleteHomeScreen extends StatelessWidget {
                 ),
                 const SizedBox(height: 8),
                 const Text(
-                  'Edite os dias, modalidades e o tempo disponível para que o motor gere treinos mais aderentes à sua rotina.',
+                  'Atualize sua rotina semanal para facilitar a organização dos treinos e o acompanhamento pelos profissionais.',
                 ),
                 const SizedBox(height: 12),
                 FilledButton.tonal(
                   onPressed: () {
                     Navigator.of(context).push(
                       MaterialPageRoute(
-                        builder: (_) => const AthleteWeeklyAvailabilityEditScreen(),
+                        builder: (_) =>
+                            const AthleteWeeklyAvailabilityEditScreen(),
                       ),
                     );
                   },
@@ -318,20 +337,8 @@ class AthleteHomeScreen extends StatelessWidget {
             runSpacing: 12,
             children: [
               SizedBox(
-                width: 300,
-                child: Container(
-                  padding: const EdgeInsets.all(18),
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(18),
-                    color: Colors.white,
-                    boxShadow: const [
-                      BoxShadow(
-                        blurRadius: 12,
-                        offset: Offset(0, 6),
-                        color: Color(0x12000000),
-                      ),
-                    ],
-                  ),
+                width: 320,
+                child: _HomeCard(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -344,14 +351,15 @@ class AthleteHomeScreen extends StatelessWidget {
                       ),
                       const SizedBox(height: 8),
                       const Text(
-                        'Busque treinadores e profissionais para compor sua jornada esportiva.',
+                        'Busque treinadores, nutricionistas, fisioterapeutas e outros profissionais.',
                       ),
                       const SizedBox(height: 12),
                       FilledButton(
                         onPressed: () {
                           Navigator.of(context).push(
                             MaterialPageRoute(
-                              builder: (_) => const AthleteSearchProfessionalsScreen(),
+                              builder: (_) =>
+                                  const AthleteSearchProfessionalsScreen(),
                             ),
                           );
                         },
@@ -362,20 +370,8 @@ class AthleteHomeScreen extends StatelessWidget {
                 ),
               ),
               SizedBox(
-                width: 300,
-                child: Container(
-                  padding: const EdgeInsets.all(18),
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(18),
-                    color: Colors.white,
-                    boxShadow: const [
-                      BoxShadow(
-                        blurRadius: 12,
-                        offset: Offset(0, 6),
-                        color: Color(0x12000000),
-                      ),
-                    ],
-                  ),
+                width: 320,
+                child: _HomeCard(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -395,11 +391,12 @@ class AthleteHomeScreen extends StatelessWidget {
                         onPressed: () {
                           Navigator.of(context).push(
                             MaterialPageRoute(
-                              builder: (_) => const AthleteApprovedWorkoutsScreen(),
+                              builder: (_) =>
+                                  const AthleteApprovedWorkoutsScreen(),
                             ),
                           );
                         },
-                        child: const Text('Ver treinos aprovados'),
+                        child: const Text('Ver treinos'),
                       ),
                     ],
                   ),
@@ -413,28 +410,71 @@ class AthleteHomeScreen extends StatelessWidget {
   }
 }
 
-class CoachHomeScreen extends StatelessWidget {
+class ProfessionalHomeScreen extends StatelessWidget {
   final String fullName;
 
-  const CoachHomeScreen({super.key, required this.fullName});
+  const ProfessionalHomeScreen({super.key, required this.fullName});
 
   @override
   Widget build(BuildContext context) {
     return BaseHomeScaffold(
       title: 'Home do Profissional',
-      message: 'Bem-vindo, $fullName\n\nSeu perfil profissional está ativo.',
+      subtitle:
+          'Bem-vindo, $fullName.\n\nSeu ambiente profissional está focado em vínculo com atletas, criação manual de treinos, revisão e publicação.',
       actions: [
-        FilledButton(
-          onPressed: () {
-            Navigator.of(context).push(
-              MaterialPageRoute(
-                builder: (_) => const CoachRequestsScreen(),
-              ),
-            );
-          },
-          child: const Text('Solicitações de atletas'),
+        SizedBox(
+          width: 260,
+          child: FilledButton(
+            onPressed: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => const CoachRequestsScreen(),
+                ),
+              );
+            },
+            child: const Text('Solicitações e atletas'),
+          ),
+        ),
+        SizedBox(
+          width: 260,
+          child: FilledButton.tonal(
+            onPressed: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => const CoachCreateWorkoutScreen(),
+                ),
+              );
+            },
+            child: const Text('Criar treino manual'),
+          ),
         ),
       ],
+    );
+  }
+}
+
+class _HomeCard extends StatelessWidget {
+  final Widget child;
+
+  const _HomeCard({required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(18),
+        color: Colors.white,
+        boxShadow: const [
+          BoxShadow(
+            blurRadius: 12,
+            offset: Offset(0, 6),
+            color: Color(0x12000000),
+          ),
+        ],
+      ),
+      child: child,
     );
   }
 }
