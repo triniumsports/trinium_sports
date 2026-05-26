@@ -61,21 +61,23 @@ class _CoachCreateWorkoutScreenState extends State<CoachCreateWorkoutScreen> {
   static const Map<String, String> _stepCategoryLabels = {
     'warmup': 'Aquecimento',
     'main': 'Principal',
-    'interval': 'Intervalo',
+    'interval': 'Tiro',
     'recovery': 'Recuperação',
     'cooldown': 'Desaquecimento',
+    'rest': 'Descanso',
     'open': 'Livre',
   };
 
   static const Map<String, String> _durationTypeLabels = {
     'time': 'Tempo',
     'distance': 'Distância',
+    'lap_button': 'Botão Lap',
     'open': 'Livre',
-    'lap_button': 'Botão/Lap',
   };
 
   static const Map<String, String> _durationUnitLabels = {
     'sec': 'seg',
+    'min': 'min',
     'm': 'm',
     'km': 'km',
     'lap': 'lap',
@@ -84,11 +86,20 @@ class _CoachCreateWorkoutScreenState extends State<CoachCreateWorkoutScreen> {
   static const Map<String, String> _targetTypeLabels = {
     'heart_rate_zone': 'Zona FC',
     'pace_zone': 'Zona de pace',
-    'rpe': 'RPE',
+    'speed_zone': 'Zona de velocidade',
     'power_zone': 'Zona de potência',
     'cadence': 'Cadência',
-    'free': 'Livre',
+    'rpe': 'RPE',
+    'none': 'Sem alvo',
   };
+
+  static const List<String> _zoneOptions = [
+    'Z1',
+    'Z2',
+    'Z3',
+    'Z4',
+    'Z5',
+  ];
 
   @override
   void initState() {
@@ -136,38 +147,22 @@ class _CoachCreateWorkoutScreenState extends State<CoachCreateWorkoutScreen> {
     });
 
     try {
-      final relations = await _client
-          .from('coach_athlete_relation')
-          .select('athlete_id')
-          .eq('coach_id', user.id)
-          .eq('status', 'active');
+      final rows = await _client
+          .from('v_professional_active_athletes')
+          .select()
+          .eq('professional_id', user.id)
+          .order('athlete_name', ascending: true);
 
-      final athleteIds = (relations as List)
-          .map((e) => _s((e as Map<String, dynamic>)['athlete_id']))
-          .where((e) => e.isNotEmpty)
-          .toSet()
+      _athletes = (rows as List)
+          .cast<Map<String, dynamic>>()
+          .map(
+            (r) => _AthleteOption(
+              id: _s(r['athlete_id']),
+              name: _s(r['athlete_name']).isEmpty ? 'Atleta' : _s(r['athlete_name']),
+              email: _s(r['athlete_email']),
+            ),
+          )
           .toList();
-
-      if (athleteIds.isEmpty) {
-        _athletes = [];
-      } else {
-        final profiles = await _client
-            .from('profiles')
-            .select('id, full_name, email')
-            .filter('id', 'in', '(${athleteIds.map((e) => '"$e"').join(',')})');
-
-        _athletes = (profiles as List)
-            .cast<Map<String, dynamic>>()
-            .map(
-              (p) => _AthleteOption(
-                id: _s(p['id']),
-                name: _s(p['full_name']).isEmpty ? 'Atleta' : _s(p['full_name']),
-                email: _s(p['email']),
-              ),
-            )
-            .toList()
-          ..sort((a, b) => a.name.compareTo(b.name));
-      }
 
       if (widget.initialAthleteId != null &&
           _athletes.any((a) => a.id == widget.initialAthleteId)) {
@@ -176,7 +171,7 @@ class _CoachCreateWorkoutScreenState extends State<CoachCreateWorkoutScreen> {
         _selectedAthleteId = _athletes.first.id;
       }
     } catch (e) {
-      _msg = 'Erro ao carregar atletas: $e';
+      _msg = 'Erro ao carregar atletas ativos: $e';
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -213,7 +208,7 @@ class _CoachCreateWorkoutScreenState extends State<CoachCreateWorkoutScreen> {
     }
 
     if (_steps.isEmpty) {
-      setState(() => _msg = 'Adicione ao menos 1 step.');
+      setState(() => _msg = 'Adicione ao menos 1 etapa.');
       return;
     }
 
@@ -223,7 +218,7 @@ class _CoachCreateWorkoutScreenState extends State<CoachCreateWorkoutScreen> {
     });
 
     if (hasInvalidStep) {
-      setState(() => _msg = 'Preencha a duração/valor dos steps.');
+      setState(() => _msg = 'Preencha a duração/valor de todas as etapas.');
       return;
     }
 
@@ -284,34 +279,16 @@ class _CoachCreateWorkoutScreenState extends State<CoachCreateWorkoutScreen> {
           'duration_value': _toNumOrNull(s.durationValueController.text),
           'duration_type': s.durationType,
           'duration_unit': s.durationUnit,
-          'target_type': s.targetType.isEmpty ? null : s.targetType,
-          'target_low': s.targetLowController.text.trim().isEmpty
-              ? null
-              : s.targetLowController.text.trim(),
-          'target_high': s.targetHighController.text.trim().isEmpty
-              ? null
-              : s.targetHighController.text.trim(),
-          'target_unit': s.targetUnitController.text.trim().isEmpty
-              ? null
-              : s.targetUnitController.text.trim(),
-          'repeat_group_id': s.repeatGroupIdController.text.trim().isEmpty
-              ? null
-              : s.repeatGroupIdController.text.trim(),
-          'repeat_count': int.tryParse(s.repeatCountController.text.trim()),
-          'recovery_duration_type':
-              s.recoveryDurationTypeController.text.trim().isEmpty
-                  ? null
-                  : s.recoveryDurationTypeController.text.trim(),
-          'recovery_duration_value':
-              _toNumOrNull(s.recoveryDurationValueController.text),
-          'recovery_duration_unit':
-              s.recoveryDurationUnitController.text.trim().isEmpty
-                  ? null
-                  : s.recoveryDurationUnitController.text.trim(),
+          'target_type': s.targetType == 'none' ? null : s.targetType,
+          'target_zone': s.targetZone == 'none' ? null : s.targetZone,
           'step_category': s.stepCategory,
           'step_notes': s.stepNotesController.text.trim().isEmpty
               ? null
               : s.stepNotesController.text.trim(),
+          'repeat_group_id': s.repeatGroupIdController.text.trim().isEmpty
+              ? null
+              : s.repeatGroupIdController.text.trim(),
+          'repeat_count': int.tryParse(s.repeatCountController.text.trim()),
           'is_completed': false,
         });
       }
@@ -528,7 +505,7 @@ class _CoachCreateWorkoutScreenState extends State<CoachCreateWorkoutScreen> {
                 ),
                 const SizedBox(height: 16),
                 _SectionCard(
-                  title: 'Steps estruturados',
+                  title: 'Etapas estruturadas',
                   child: Column(
                     children: [
                       ...List.generate(_steps.length, (index) {
@@ -543,6 +520,7 @@ class _CoachCreateWorkoutScreenState extends State<CoachCreateWorkoutScreen> {
                             durationTypeLabels: _durationTypeLabels,
                             durationUnitLabels: _durationUnitLabels,
                             targetTypeLabels: _targetTypeLabels,
+                            zoneOptions: _zoneOptions,
                             onRemove: () => _removeStep(index),
                             onChanged: () => setState(() {}),
                           ),
@@ -553,7 +531,7 @@ class _CoachCreateWorkoutScreenState extends State<CoachCreateWorkoutScreen> {
                         child: OutlinedButton.icon(
                           onPressed: _addStep,
                           icon: const Icon(Icons.add),
-                          label: const Text('Adicionar step'),
+                          label: const Text('Adicionar etapa'),
                         ),
                       ),
                     ],
@@ -609,35 +587,25 @@ class _WorkoutStepDraft {
   String durationType;
   String durationUnit;
   String targetType;
+  String targetZone;
 
   final TextEditingController durationValueController;
-  final TextEditingController targetLowController;
-  final TextEditingController targetHighController;
-  final TextEditingController targetUnitController;
   final TextEditingController notesController;
   final TextEditingController stepNotesController;
   final TextEditingController repeatGroupIdController;
   final TextEditingController repeatCountController;
-  final TextEditingController recoveryDurationTypeController;
-  final TextEditingController recoveryDurationValueController;
-  final TextEditingController recoveryDurationUnitController;
 
   _WorkoutStepDraft({
     required this.stepCategory,
     required this.durationType,
     required this.durationUnit,
     required this.targetType,
+    required this.targetZone,
     required this.durationValueController,
-    required this.targetLowController,
-    required this.targetHighController,
-    required this.targetUnitController,
     required this.notesController,
     required this.stepNotesController,
     required this.repeatGroupIdController,
     required this.repeatCountController,
-    required this.recoveryDurationTypeController,
-    required this.recoveryDurationValueController,
-    required this.recoveryDurationUnitController,
   });
 
   factory _WorkoutStepDraft.initial() {
@@ -646,17 +614,12 @@ class _WorkoutStepDraft {
       durationType: 'time',
       durationUnit: 'sec',
       targetType: 'heart_rate_zone',
+      targetZone: 'Z2',
       durationValueController: TextEditingController(),
-      targetLowController: TextEditingController(),
-      targetHighController: TextEditingController(),
-      targetUnitController: TextEditingController(text: 'zone'),
       notesController: TextEditingController(),
       stepNotesController: TextEditingController(),
       repeatGroupIdController: TextEditingController(),
       repeatCountController: TextEditingController(),
-      recoveryDurationTypeController: TextEditingController(),
-      recoveryDurationValueController: TextEditingController(),
-      recoveryDurationUnitController: TextEditingController(),
     );
   }
 
@@ -670,6 +633,8 @@ class _WorkoutStepDraft {
         return 'cooldown';
       case 'recovery':
         return 'recovery';
+      case 'rest':
+        return 'rest';
       case 'open':
         return 'open';
       default:
@@ -679,16 +644,10 @@ class _WorkoutStepDraft {
 
   void dispose() {
     durationValueController.dispose();
-    targetLowController.dispose();
-    targetHighController.dispose();
-    targetUnitController.dispose();
     notesController.dispose();
     stepNotesController.dispose();
     repeatGroupIdController.dispose();
     repeatCountController.dispose();
-    recoveryDurationTypeController.dispose();
-    recoveryDurationValueController.dispose();
-    recoveryDurationUnitController.dispose();
   }
 }
 
@@ -742,6 +701,7 @@ class _StepEditorCard extends StatelessWidget {
   final Map<String, String> durationTypeLabels;
   final Map<String, String> durationUnitLabels;
   final Map<String, String> targetTypeLabels;
+  final List<String> zoneOptions;
   final VoidCallback onRemove;
   final VoidCallback onChanged;
 
@@ -753,9 +713,17 @@ class _StepEditorCard extends StatelessWidget {
     required this.durationTypeLabels,
     required this.durationUnitLabels,
     required this.targetTypeLabels,
+    required this.zoneOptions,
     required this.onRemove,
     required this.onChanged,
   });
+
+  bool get _showZoneSelector {
+    return step.targetType == 'heart_rate_zone' ||
+        step.targetType == 'pace_zone' ||
+        step.targetType == 'speed_zone' ||
+        step.targetType == 'power_zone';
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -769,7 +737,7 @@ class _StepEditorCard extends StatelessWidget {
               children: [
                 Expanded(
                   child: Text(
-                    'Step ${index + 1}',
+                    'Etapa ${index + 1}',
                     style: const TextStyle(
                       fontWeight: FontWeight.w700,
                       fontSize: 16,
@@ -839,7 +807,7 @@ class _StepEditorCard extends StatelessWidget {
                     controller: step.durationValueController,
                     keyboardType: TextInputType.number,
                     decoration: const InputDecoration(
-                      labelText: 'Valor da duração',
+                      labelText: 'Valor',
                       border: OutlineInputBorder(),
                     ),
                     validator: (value) {
@@ -892,43 +860,45 @@ class _StepEditorCard extends StatelessWidget {
                   .toList(),
               onChanged: (value) {
                 step.targetType = value ?? 'heart_rate_zone';
+                if (step.targetType == 'none') {
+                  step.targetZone = 'none';
+                } else if (step.targetZone == 'none') {
+                  step.targetZone = 'Z2';
+                }
                 onChanged();
               },
             ),
             const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: step.targetLowController,
-                    decoration: const InputDecoration(
-                      labelText: 'Alvo mínimo',
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
+            if (_showZoneSelector)
+              DropdownButtonFormField<String>(
+                initialValue: step.targetZone,
+                decoration: const InputDecoration(
+                  labelText: 'Zona',
+                  border: OutlineInputBorder(),
                 ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: TextField(
-                    controller: step.targetHighController,
-                    decoration: const InputDecoration(
-                      labelText: 'Alvo máximo',
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
+                items: zoneOptions
+                    .map(
+                      (z) => DropdownMenuItem<String>(
+                        value: z,
+                        child: Text(z),
+                      ),
+                    )
+                    .toList(),
+                onChanged: (value) {
+                  step.targetZone = value ?? 'Z2';
+                  onChanged();
+                },
+              ),
+            if (step.targetType == 'cadence' || step.targetType == 'rpe')
+              TextField(
+                controller: step.notesController,
+                decoration: InputDecoration(
+                  labelText: step.targetType == 'cadence'
+                      ? 'Cadência alvo'
+                      : 'RPE alvo',
+                  border: const OutlineInputBorder(),
                 ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: TextField(
-                    controller: step.targetUnitController,
-                    decoration: const InputDecoration(
-                      labelText: 'Unidade alvo',
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
-                ),
-              ],
-            ),
+              ),
             const SizedBox(height: 12),
             Row(
               children: [
@@ -936,7 +906,7 @@ class _StepEditorCard extends StatelessWidget {
                   child: TextField(
                     controller: step.repeatGroupIdController,
                     decoration: const InputDecoration(
-                      labelText: 'Grupo repetição',
+                      labelText: 'Grupo de repetição',
                       border: OutlineInputBorder(),
                     ),
                   ),
@@ -955,55 +925,11 @@ class _StepEditorCard extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: step.recoveryDurationTypeController,
-                    decoration: const InputDecoration(
-                      labelText: 'Tipo recuperação',
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: TextField(
-                    controller: step.recoveryDurationValueController,
-                    keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(
-                      labelText: 'Valor recuperação',
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: TextField(
-                    controller: step.recoveryDurationUnitController,
-                    decoration: const InputDecoration(
-                      labelText: 'Unidade recuperação',
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: step.notesController,
-              maxLines: 2,
-              decoration: const InputDecoration(
-                labelText: 'Observações',
-                border: OutlineInputBorder(),
-              ),
-            ),
-            const SizedBox(height: 12),
             TextField(
               controller: step.stepNotesController,
               maxLines: 2,
               decoration: const InputDecoration(
-                labelText: 'Notas estruturadas do step',
+                labelText: 'Observações da etapa',
                 border: OutlineInputBorder(),
               ),
             ),

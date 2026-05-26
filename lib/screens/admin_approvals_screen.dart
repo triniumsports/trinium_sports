@@ -28,7 +28,7 @@ class _AdminApprovalsScreenState extends State<AdminApprovalsScreen> {
 
   // Lists
   bool _listLoading = false;
-  String _listFilter = 'pending'; // pending | verified | rejected
+  String _listFilter = 'pending'; // pending | approved | rejected
   List<Map<String, dynamic>> _list = [];
   final Map<String, Map<String, dynamic>> _profileCache = {}; // id -> profile
 
@@ -130,7 +130,7 @@ class _AdminApprovalsScreenState extends State<AdminApprovalsScreen> {
       });
 
       setState(() {
-        _message = decision == 'verified' ? 'Aprovado ✅' : 'Reprovado ❌';
+        _message = decision == 'approved' ? 'Aprovado ✅' : 'Reprovado ❌';
         _current = null;
         _currentProfile = null;
         _noteController.clear();
@@ -244,7 +244,7 @@ class _AdminApprovalsScreenState extends State<AdminApprovalsScreen> {
           ),
           _ApproveIntent: CallbackAction<_ApproveIntent>(
             onInvoke: (_) {
-              if (!_loading && _current != null) _review('verified');
+              if (!_loading && _current != null) _review('approved');
               return null;
             },
           ),
@@ -320,7 +320,7 @@ class _AdminApprovalsScreenState extends State<AdminApprovalsScreen> {
                                   docsLoader: () => _docsFromRow(current),
                                   signedUrlLoader: _signedUrlForDoc,
                                   openUrl: _openInNewTab,
-                                  onApprove: _loading ? null : () => _review('verified'),
+                                  onApprove: _loading ? null : () => _review('approved'),
                                   onReject: _loading ? null : () => _review('rejected'),
                                 ),
                               ),
@@ -354,8 +354,8 @@ class _AdminApprovalsScreenState extends State<AdminApprovalsScreen> {
                                         child: Text('Pendentes (pending)'),
                                       ),
                                       DropdownMenuItem(
-                                        value: 'verified',
-                                        child: Text('Aprovados (verified)'),
+                                        value: 'approved',
+                                        child: Text('Aprovados (approved)'),
                                       ),
                                       DropdownMenuItem(
                                         value: 'rejected',
