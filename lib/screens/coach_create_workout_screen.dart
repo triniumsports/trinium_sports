@@ -38,7 +38,7 @@ class _CoachCreateWorkoutScreenState extends State<CoachCreateWorkoutScreen> {
   final TextEditingController _rpeController = TextEditingController();
   final TextEditingController _coachNotesController = TextEditingController();
 
-  final List<_WorkoutStepDraft> _steps = [];
+  final List<_WorkoutBlockDraft> _blocks = [];
 
   static const Map<String, String> _activityLabels = {
     'running': 'Corrida',
@@ -93,19 +93,31 @@ class _CoachCreateWorkoutScreenState extends State<CoachCreateWorkoutScreen> {
     'none': 'Sem alvo',
   };
 
-  static const List<String> _zoneOptions = [
-    'Z1',
-    'Z2',
-    'Z3',
-    'Z4',
-    'Z5',
-  ];
+  static const List<String> _zoneOptions = ['Z1', 'Z2', 'Z3', 'Z4', 'Z5'];
 
   @override
   void initState() {
     super.initState();
     _scheduledDate = DateTime.now();
-    _steps.add(_WorkoutStepDraft.initial());
+    _blocks.add(
+      _WorkoutBlockDraft.single(
+        _WorkoutStepDraft.initial(stepCategory: 'warmup'),
+      ),
+    );
+    _blocks.add(
+      _WorkoutBlockDraft.repeat(
+        repeatCount: 4,
+        steps: [
+          _WorkoutStepDraft.initial(stepCategory: 'interval'),
+          _WorkoutStepDraft.initial(stepCategory: 'recovery'),
+        ],
+      ),
+    );
+    _blocks.add(
+      _WorkoutBlockDraft.single(
+        _WorkoutStepDraft.initial(stepCategory: 'cooldown'),
+      ),
+    );
     _loadAthletes();
   }
 
@@ -117,8 +129,8 @@ class _CoachCreateWorkoutScreenState extends State<CoachCreateWorkoutScreen> {
     _rpeController.dispose();
     _coachNotesController.dispose();
 
-    for (final step in _steps) {
-      step.dispose();
+    for (final block in _blocks) {
+      block.dispose();
     }
     super.dispose();
   }
@@ -177,17 +189,48 @@ class _CoachCreateWorkoutScreenState extends State<CoachCreateWorkoutScreen> {
     }
   }
 
-  void _addStep() {
+  void _addSingleStepBlock() {
     setState(() {
-      _steps.add(_WorkoutStepDraft.initial());
+      _blocks.add(
+        _WorkoutBlockDraft.single(_WorkoutStepDraft.initial()),
+      );
     });
   }
 
-  void _removeStep(int index) {
-    if (_steps.length == 1) return;
+  void _addRepeatBlock() {
     setState(() {
-      _steps[index].dispose();
-      _steps.removeAt(index);
+      _blocks.add(
+        _WorkoutBlockDraft.repeat(
+          repeatCount: 4,
+          steps: [
+            _WorkoutStepDraft.initial(stepCategory: 'interval'),
+            _WorkoutStepDraft.initial(stepCategory: 'recovery'),
+          ],
+        ),
+      );
+    });
+  }
+
+  void _removeBlock(int index) {
+    if (_blocks.length == 1) return;
+    setState(() {
+      _blocks[index].dispose();
+      _blocks.removeAt(index);
+    });
+  }
+
+  void _addStepInsideBlock(int blockIndex) {
+    setState(() {
+      _blocks[blockIndex].steps.add(_WorkoutStepDraft.initial());
+    });
+  }
+
+  void _removeStepInsideBlock(int blockIndex, int stepIndex) {
+    final block = _blocks[blockIndex];
+    if (block.steps.length == 1) return;
+    setState(() {
+      block.steps[stepIndex].dispose();
+      block.steps.removeAt(stepIndex);
     });
   }
 
@@ -207,19 +250,19 @@ class _CoachCreateWorkoutScreenState extends State<CoachCreateWorkoutScreen> {
       return;
     }
 
-    if (_steps.isEmpty) {
-      setState(() => _msg = 'Adicione ao menos 1 etapa.');
+    if (_blocks.isEmpty) {
+      setState(() => _msg = 'Adicione pelo menos uma etapa.');
       return;
     }
 
-    final hasInvalidStep = _steps.any((s) {
-      if (s.durationType == 'open') return false;
-      return s.durationValueController.text.trim().isEmpty;
-    });
-
-    if (hasInvalidStep) {
-      setState(() => _msg = 'Preencha a duração/valor de todas as etapas.');
-      return;
+    for (final block in _blocks) {
+      for (final step in block.steps) {
+        if (step.durationType != 'open' &&
+            step.durationValueController.text.trim().isEmpty) {
+          setState(() => _msg = 'Preencha a duração/valor de todas as etapas.');
+          return;
+        }
+      }
     }
 
     setState(() {
@@ -267,30 +310,36 @@ class _CoachCreateWorkoutScreenState extends State<CoachCreateWorkoutScreen> {
       final workoutId = workoutInserted['id'] as int;
 
       final stepRows = <Map<String, dynamic>>[];
-      for (int i = 0; i < _steps.length; i++) {
-        final s = _steps[i];
-        stepRows.add({
-          'prescribed_workout_id': workoutId,
-          'step_order': i + 1,
-          'step_type': s.stepTypeText(),
-          'notes': s.notesController.text.trim().isEmpty
-              ? null
-              : s.notesController.text.trim(),
-          'duration_value': _toNumOrNull(s.durationValueController.text),
-          'duration_type': s.durationType,
-          'duration_unit': s.durationUnit,
-          'target_type': s.targetType == 'none' ? null : s.targetType,
-          'target_zone': s.targetZone == 'none' ? null : s.targetZone,
-          'step_category': s.stepCategory,
-          'step_notes': s.stepNotesController.text.trim().isEmpty
-              ? null
-              : s.stepNotesController.text.trim(),
-          'repeat_group_id': s.repeatGroupIdController.text.trim().isEmpty
-              ? null
-              : s.repeatGroupIdController.text.trim(),
-          'repeat_count': int.tryParse(s.repeatCountController.text.trim()),
-          'is_completed': false,
-        });
+      int globalOrder = 1;
+
+      for (int blockIndex = 0; blockIndex < _blocks.length; blockIndex++) {
+        final block = _blocks[blockIndex];
+        final repeatGroupId = block.isRepeat ? 'RG${blockIndex + 1}' : null;
+        final repeatCount = block.isRepeat ? block.repeatCount : null;
+
+        for (final step in block.steps) {
+          stepRows.add({
+            'prescribed_workout_id': workoutId,
+            'step_order': globalOrder,
+            'step_type': step.stepTypeText(),
+            'notes': step.notesController.text.trim().isEmpty
+                ? null
+                : step.notesController.text.trim(),
+            'duration_value': _toNumOrNull(step.durationValueController.text),
+            'duration_type': step.durationType,
+            'duration_unit': step.durationUnit,
+            'target_type': step.targetType == 'none' ? null : step.targetType,
+            'target_zone': step.targetZone == 'none' ? null : step.targetZone,
+            'step_category': step.stepCategory,
+            'step_notes': step.stepNotesController.text.trim().isEmpty
+                ? null
+                : step.stepNotesController.text.trim(),
+            'repeat_group_id': repeatGroupId,
+            'repeat_count': repeatCount,
+            'is_completed': false,
+          });
+          globalOrder++;
+        }
       }
 
       await _client.from('prescribed_workout_steps').insert(stepRows);
@@ -328,7 +377,7 @@ class _CoachCreateWorkoutScreenState extends State<CoachCreateWorkoutScreen> {
       ),
       body: Center(
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 980),
+          constraints: const BoxConstraints(maxWidth: 1100),
           child: Form(
             key: _formKey,
             child: ListView(
@@ -505,35 +554,52 @@ class _CoachCreateWorkoutScreenState extends State<CoachCreateWorkoutScreen> {
                 ),
                 const SizedBox(height: 16),
                 _SectionCard(
-                  title: 'Etapas estruturadas',
+                  title: 'Builder do treino',
                   child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      ...List.generate(_steps.length, (index) {
-                        final step = _steps[index];
+                      Wrap(
+                        spacing: 12,
+                        runSpacing: 12,
+                        children: [
+                          OutlinedButton.icon(
+                            onPressed: _addSingleStepBlock,
+                            icon: const Icon(Icons.add),
+                            label: const Text('Adicionar etapa'),
+                          ),
+                          OutlinedButton.icon(
+                            onPressed: _addRepeatBlock,
+                            icon: const Icon(Icons.repeat),
+                            label: const Text('Adicionar repetição'),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 16),
+                      ...List.generate(_blocks.length, (blockIndex) {
+                        final block = _blocks[blockIndex];
                         return Padding(
-                          padding: const EdgeInsets.only(bottom: 12),
-                          child: _StepEditorCard(
-                            index: index,
-                            step: step,
-                            canRemove: _steps.length > 1,
+                          padding: const EdgeInsets.only(bottom: 14),
+                          child: _WorkoutBlockCard(
+                            title: block.isRepeat
+                                ? 'Bloco de repetição ${blockIndex + 1}'
+                                : 'Etapa ${blockIndex + 1}',
+                            block: block,
+                            canRemove: _blocks.length > 1,
                             stepCategoryLabels: _stepCategoryLabels,
                             durationTypeLabels: _durationTypeLabels,
                             durationUnitLabels: _durationUnitLabels,
                             targetTypeLabels: _targetTypeLabels,
                             zoneOptions: _zoneOptions,
-                            onRemove: () => _removeStep(index),
+                            onRemoveBlock: () => _removeBlock(blockIndex),
+                            onAddStep: block.isRepeat
+                                ? () => _addStepInsideBlock(blockIndex)
+                                : null,
+                            onRemoveStep: (stepIndex) =>
+                                _removeStepInsideBlock(blockIndex, stepIndex),
                             onChanged: () => setState(() {}),
                           ),
                         );
                       }),
-                      Align(
-                        alignment: Alignment.centerLeft,
-                        child: OutlinedButton.icon(
-                          onPressed: _addStep,
-                          icon: const Icon(Icons.add),
-                          label: const Text('Adicionar etapa'),
-                        ),
-                      ),
                     ],
                   ),
                 ),
@@ -582,6 +648,43 @@ class _AthleteOption {
   });
 }
 
+class _WorkoutBlockDraft {
+  final bool isRepeat;
+  int repeatCount;
+  final List<_WorkoutStepDraft> steps;
+
+  _WorkoutBlockDraft({
+    required this.isRepeat,
+    required this.repeatCount,
+    required this.steps,
+  });
+
+  factory _WorkoutBlockDraft.single(_WorkoutStepDraft step) {
+    return _WorkoutBlockDraft(
+      isRepeat: false,
+      repeatCount: 1,
+      steps: [step],
+    );
+  }
+
+  factory _WorkoutBlockDraft.repeat({
+    required int repeatCount,
+    required List<_WorkoutStepDraft> steps,
+  }) {
+    return _WorkoutBlockDraft(
+      isRepeat: true,
+      repeatCount: repeatCount,
+      steps: steps,
+    );
+  }
+
+  void dispose() {
+    for (final step in steps) {
+      step.dispose();
+    }
+  }
+}
+
 class _WorkoutStepDraft {
   String stepCategory;
   String durationType;
@@ -592,8 +695,6 @@ class _WorkoutStepDraft {
   final TextEditingController durationValueController;
   final TextEditingController notesController;
   final TextEditingController stepNotesController;
-  final TextEditingController repeatGroupIdController;
-  final TextEditingController repeatCountController;
 
   _WorkoutStepDraft({
     required this.stepCategory,
@@ -604,22 +705,18 @@ class _WorkoutStepDraft {
     required this.durationValueController,
     required this.notesController,
     required this.stepNotesController,
-    required this.repeatGroupIdController,
-    required this.repeatCountController,
   });
 
-  factory _WorkoutStepDraft.initial() {
+  factory _WorkoutStepDraft.initial({String stepCategory = 'main'}) {
     return _WorkoutStepDraft(
-      stepCategory: 'main',
+      stepCategory: stepCategory,
       durationType: 'time',
-      durationUnit: 'sec',
+      durationUnit: 'min',
       targetType: 'heart_rate_zone',
       targetZone: 'Z2',
       durationValueController: TextEditingController(),
       notesController: TextEditingController(),
       stepNotesController: TextEditingController(),
-      repeatGroupIdController: TextEditingController(),
-      repeatCountController: TextEditingController(),
     );
   }
 
@@ -646,8 +743,6 @@ class _WorkoutStepDraft {
     durationValueController.dispose();
     notesController.dispose();
     stepNotesController.dispose();
-    repeatGroupIdController.dispose();
-    repeatCountController.dispose();
   }
 }
 
@@ -693,8 +788,121 @@ class _SectionCard extends StatelessWidget {
   }
 }
 
-class _StepEditorCard extends StatelessWidget {
-  final int index;
+class _WorkoutBlockCard extends StatelessWidget {
+  final String title;
+  final _WorkoutBlockDraft block;
+  final bool canRemove;
+  final Map<String, String> stepCategoryLabels;
+  final Map<String, String> durationTypeLabels;
+  final Map<String, String> durationUnitLabels;
+  final Map<String, String> targetTypeLabels;
+  final List<String> zoneOptions;
+  final VoidCallback onRemoveBlock;
+  final VoidCallback? onAddStep;
+  final void Function(int stepIndex) onRemoveStep;
+  final VoidCallback onChanged;
+
+  const _WorkoutBlockCard({
+    required this.title,
+    required this.block,
+    required this.canRemove,
+    required this.stepCategoryLabels,
+    required this.durationTypeLabels,
+    required this.durationUnitLabels,
+    required this.targetTypeLabels,
+    required this.zoneOptions,
+    required this.onRemoveBlock,
+    required this.onAddStep,
+    required this.onRemoveStep,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: const Color(0xFFD9DCE4)),
+        color: const Color(0xFFFAFBFD),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    title,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w700,
+                      fontSize: 16,
+                    ),
+                  ),
+                ),
+                if (block.isRepeat)
+                  SizedBox(
+                    width: 170,
+                    child: TextFormField(
+                      initialValue: block.repeatCount.toString(),
+                      keyboardType: TextInputType.number,
+                      decoration: const InputDecoration(
+                        labelText: 'Repetir vezes',
+                        border: OutlineInputBorder(),
+                        isDense: true,
+                      ),
+                      onChanged: (value) {
+                        block.repeatCount = int.tryParse(value) ?? 1;
+                        onChanged();
+                      },
+                    ),
+                  ),
+                if (canRemove) ...[
+                  const SizedBox(width: 8),
+                  IconButton(
+                    onPressed: onRemoveBlock,
+                    icon: const Icon(Icons.delete_outline),
+                  ),
+                ],
+              ],
+            ),
+            const SizedBox(height: 12),
+            ...List.generate(block.steps.length, (stepIndex) {
+              final step = block.steps[stepIndex];
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: _StepCard(
+                  title: block.isRepeat
+                      ? 'Etapa da repetição ${stepIndex + 1}'
+                      : 'Etapa',
+                  step: step,
+                  canRemove: block.isRepeat && block.steps.length > 1,
+                  stepCategoryLabels: stepCategoryLabels,
+                  durationTypeLabels: durationTypeLabels,
+                  durationUnitLabels: durationUnitLabels,
+                  targetTypeLabels: targetTypeLabels,
+                  zoneOptions: zoneOptions,
+                  onRemove: () => onRemoveStep(stepIndex),
+                  onChanged: onChanged,
+                ),
+              );
+            }),
+            if (block.isRepeat && onAddStep != null)
+              OutlinedButton.icon(
+                onPressed: onAddStep,
+                icon: const Icon(Icons.add),
+                label: const Text('Adicionar etapa no bloco'),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _StepCard extends StatelessWidget {
+  final String title;
   final _WorkoutStepDraft step;
   final bool canRemove;
   final Map<String, String> stepCategoryLabels;
@@ -705,8 +913,8 @@ class _StepEditorCard extends StatelessWidget {
   final VoidCallback onRemove;
   final VoidCallback onChanged;
 
-  const _StepEditorCard({
-    required this.index,
+  const _StepCard({
+    required this.title,
     required this.step,
     required this.canRemove,
     required this.stepCategoryLabels,
@@ -728,6 +936,8 @@ class _StepEditorCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Card(
+      elevation: 0,
+      color: Colors.white,
       child: Padding(
         padding: const EdgeInsets.all(14),
         child: Column(
@@ -737,10 +947,9 @@ class _StepEditorCard extends StatelessWidget {
               children: [
                 Expanded(
                   child: Text(
-                    'Etapa ${index + 1}',
+                    title,
                     style: const TextStyle(
                       fontWeight: FontWeight.w700,
-                      fontSize: 16,
                     ),
                   ),
                 ),
@@ -780,7 +989,7 @@ class _StepEditorCard extends StatelessWidget {
                   child: DropdownButtonFormField<String>(
                     initialValue: step.durationType,
                     decoration: const InputDecoration(
-                      labelText: 'Tipo de duração',
+                      labelText: 'Duração',
                       border: OutlineInputBorder(),
                     ),
                     items: durationTypeLabels.entries
@@ -836,7 +1045,7 @@ class _StepEditorCard extends StatelessWidget {
                         )
                         .toList(),
                     onChanged: (value) {
-                      step.durationUnit = value ?? 'sec';
+                      step.durationUnit = value ?? 'min';
                       onChanged();
                     },
                   ),
@@ -889,7 +1098,8 @@ class _StepEditorCard extends StatelessWidget {
                   onChanged();
                 },
               ),
-            if (step.targetType == 'cadence' || step.targetType == 'rpe')
+            if (step.targetType == 'cadence' || step.targetType == 'rpe') ...[
+              const SizedBox(height: 12),
               TextField(
                 controller: step.notesController,
                 decoration: InputDecoration(
@@ -899,31 +1109,7 @@ class _StepEditorCard extends StatelessWidget {
                   border: const OutlineInputBorder(),
                 ),
               ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: step.repeatGroupIdController,
-                    decoration: const InputDecoration(
-                      labelText: 'Grupo de repetição',
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: TextField(
-                    controller: step.repeatCountController,
-                    keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(
-                      labelText: 'Qtd. repetições',
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
-                ),
-              ],
-            ),
+            ],
             const SizedBox(height: 12),
             TextField(
               controller: step.stepNotesController,
