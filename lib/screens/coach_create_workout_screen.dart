@@ -181,6 +181,40 @@ class _CoachCreateWorkoutScreenState extends State<CoachCreateWorkoutScreen> {
     return int.tryParse(v);
   }
 
+  String _defaultTargetUnit(String targetType) {
+    switch (targetType) {
+      case 'repetitions':
+        return 'reps';
+      case 'time':
+        return 'seg';
+      case 'distance':
+        return 'm';
+      case 'calories':
+        return 'kcal';
+      case 'lap_button':
+        return 'lap';
+      case 'open':
+        return '';
+      default:
+        return '';
+    }
+  }
+
+  String _defaultLoadUnit(String loadType) {
+    switch (loadType) {
+      case 'manual_weight':
+        return 'kg';
+      case 'bodyweight':
+        return 'none';
+      case 'percentage_1rm':
+        return '%';
+      case 'none':
+        return 'none';
+      default:
+        return 'kg';
+    }
+  }
+
   Future<void> _loadData() async {
     final user = _client.auth.currentUser;
     if (user == null) {
@@ -352,11 +386,13 @@ class _CoachCreateWorkoutScreenState extends State<CoachCreateWorkoutScreen> {
       }
 
       for (final ex in _strengthExercises) {
-        if (ex.exerciseId == null && ex.exerciseNameOverrideController.text.trim().isEmpty) {
+        if (ex.exerciseId == null &&
+            ex.exerciseNameOverrideController.text.trim().isEmpty) {
           setState(() => _msg = 'Selecione um exercício ou informe um nome manual.');
           return;
         }
-        if (ex.targetType != 'open' && ex.targetValueController.text.trim().isEmpty) {
+        if (ex.targetType != 'open' &&
+            ex.targetValueController.text.trim().isEmpty) {
           setState(() => _msg = 'Preencha o alvo de todos os exercícios.');
           return;
         }
@@ -432,14 +468,11 @@ class _CoachCreateWorkoutScreenState extends State<CoachCreateWorkoutScreen> {
             'prescribed_workout_id': workoutId,
             'exercise_order': i + 1,
             'block_type': 'single',
-            'repeat_group_id': ex.repeatGroupIdController.text.trim().isEmpty
-                ? null
-                : ex.repeatGroupIdController.text.trim(),
-            'repeat_count': _toIntOrNull(ex.repeatCountController.text),
             'exercise_id': ex.exerciseId,
-            'exercise_name_override': ex.exerciseNameOverrideController.text.trim().isEmpty
-                ? null
-                : ex.exerciseNameOverrideController.text.trim(),
+            'exercise_name_override':
+                ex.exerciseNameOverrideController.text.trim().isEmpty
+                    ? null
+                    : ex.exerciseNameOverrideController.text.trim(),
             'muscle_group_primary_id': ex.muscleGroupId,
             'equipment_type_id': ex.equipmentTypeId,
             'target_type': ex.targetType,
@@ -451,10 +484,6 @@ class _CoachCreateWorkoutScreenState extends State<CoachCreateWorkoutScreen> {
             'load_value': _toNumOrNull(ex.loadValueController.text),
             'load_unit': ex.loadUnit == 'none' ? null : ex.loadUnit,
             'rest_sec': _toIntOrNull(ex.restSecController.text),
-            'cadence': ex.cadenceController.text.trim().isEmpty
-                ? null
-                : ex.cadenceController.text.trim(),
-            'rir': _toNumOrNull(ex.rirController.text),
             'rpe': _toNumOrNull(ex.rpeController.text),
             'notes': ex.notesController.text.trim().isEmpty
                 ? null
@@ -960,12 +989,8 @@ class _StrengthExerciseDraft {
   final TextEditingController targetUnitController;
   final TextEditingController loadValueController;
   final TextEditingController restSecController;
-  final TextEditingController cadenceController;
-  final TextEditingController rirController;
   final TextEditingController rpeController;
   final TextEditingController notesController;
-  final TextEditingController repeatGroupIdController;
-  final TextEditingController repeatCountController;
 
   _StrengthExerciseDraft({
     required this.muscleGroupId,
@@ -980,12 +1005,8 @@ class _StrengthExerciseDraft {
     required this.targetUnitController,
     required this.loadValueController,
     required this.restSecController,
-    required this.cadenceController,
-    required this.rirController,
     required this.rpeController,
     required this.notesController,
-    required this.repeatGroupIdController,
-    required this.repeatCountController,
   });
 
   factory _StrengthExerciseDraft.initial() {
@@ -1002,12 +1023,8 @@ class _StrengthExerciseDraft {
       targetUnitController: TextEditingController(text: 'reps'),
       loadValueController: TextEditingController(),
       restSecController: TextEditingController(text: '60'),
-      cadenceController: TextEditingController(),
-      rirController: TextEditingController(),
       rpeController: TextEditingController(),
       notesController: TextEditingController(),
-      repeatGroupIdController: TextEditingController(),
-      repeatCountController: TextEditingController(),
     );
   }
 
@@ -1018,12 +1035,8 @@ class _StrengthExerciseDraft {
     targetUnitController.dispose();
     loadValueController.dispose();
     restSecController.dispose();
-    cadenceController.dispose();
-    rirController.dispose();
     rpeController.dispose();
     notesController.dispose();
-    repeatGroupIdController.dispose();
-    repeatCountController.dispose();
   }
 }
 
@@ -1572,6 +1585,7 @@ class _StrengthExerciseCard extends StatelessWidget {
                         .toList(),
                     onChanged: (value) {
                       draft.targetType = value ?? 'repetitions';
+                      draft.targetUnitController.text = _StrengthUnits.defaultTargetUnit(value ?? 'repetitions');
                       onChanged();
                     },
                   ),
@@ -1598,6 +1612,7 @@ class _StrengthExerciseCard extends StatelessWidget {
                 Expanded(
                   child: TextField(
                     controller: draft.targetUnitController,
+                    readOnly: true,
                     decoration: const InputDecoration(
                       labelText: 'Unidade da meta',
                       border: OutlineInputBorder(),
@@ -1625,7 +1640,9 @@ class _StrengthExerciseCard extends StatelessWidget {
                         )
                         .toList(),
                     onChanged: (value) {
-                      draft.loadType = value ?? 'manual_weight';
+                      final v = value ?? 'manual_weight';
+                      draft.loadType = v;
+                      draft.loadUnit = _StrengthUnits.defaultLoadUnit(v);
                       onChanged();
                     },
                   ),
@@ -1681,56 +1698,10 @@ class _StrengthExerciseCard extends StatelessWidget {
                 const SizedBox(width: 12),
                 Expanded(
                   child: TextField(
-                    controller: draft.cadenceController,
-                    decoration: const InputDecoration(
-                      labelText: 'Cadência',
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: TextField(
-                    controller: draft.rirController,
-                    keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(
-                      labelText: 'RIR',
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: TextField(
                     controller: draft.rpeController,
                     keyboardType: TextInputType.number,
                     decoration: const InputDecoration(
                       labelText: 'RPE',
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: draft.repeatGroupIdController,
-                    decoration: const InputDecoration(
-                      labelText: 'Grupo repetição',
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: TextField(
-                    controller: draft.repeatCountController,
-                    keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(
-                      labelText: 'Qtd. repetições grupo',
                       border: OutlineInputBorder(),
                     ),
                   ),
@@ -1750,5 +1721,41 @@ class _StrengthExerciseCard extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+class _StrengthUnits {
+  static String defaultTargetUnit(String targetType) {
+    switch (targetType) {
+      case 'repetitions':
+        return 'reps';
+      case 'time':
+        return 'seg';
+      case 'distance':
+        return 'm';
+      case 'calories':
+        return 'kcal';
+      case 'lap_button':
+        return 'lap';
+      case 'open':
+        return '';
+      default:
+        return '';
+    }
+  }
+
+  static String defaultLoadUnit(String loadType) {
+    switch (loadType) {
+      case 'manual_weight':
+        return 'kg';
+      case 'bodyweight':
+        return 'none';
+      case 'percentage_1rm':
+        return '%';
+      case 'none':
+        return 'none';
+      default:
+        return 'kg';
+    }
   }
 }
