@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-import 'coach_athlete_summary_screen.dart';
 import 'coach_athlete_workouts_review_screen.dart';
 import 'coach_create_workout_screen.dart';
 
@@ -222,21 +221,6 @@ class _CoachRequestsScreenState extends State<CoachRequestsScreen>
     });
   }
 
-  void _openAthleteSummary(String athleteId, String athleteName) {
-    Navigator.of(context)
-        .push(
-      MaterialPageRoute(
-        builder: (_) => CoachAthleteSummaryScreen(
-          athleteId: athleteId,
-          athleteName: athleteName,
-        ),
-      ),
-    )
-        .then((_) async {
-      await _load();
-    });
-  }
-
   Widget _countChip(String label, int value, Color color) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
@@ -360,15 +344,6 @@ class _CoachRequestsScreenState extends State<CoachRequestsScreen>
                             ),
                           ]
                         : [
-                            FilledButton.tonal(
-                              onPressed: athleteId.isEmpty
-                                  ? null
-                                  : () => _openAthleteSummary(
-                                        athleteId,
-                                        athleteName,
-                                      ),
-                              child: const Text('Resumo do atleta'),
-                            ),
                             FilledButton.tonal(
                               onPressed: athleteId.isEmpty
                                   ? null
