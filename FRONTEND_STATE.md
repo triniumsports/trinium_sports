@@ -32,7 +32,7 @@
 - etapas simples
 - repetição
 - zonas
-- fluxo já funcional
+- fluxo funcional
 
 ## Builder de força
 - grupo muscular
@@ -44,11 +44,20 @@
 - descanso
 - observações
 
+## Nova direção de frontend
+O frontend precisará evoluir para suportar:
+- tela “Meus profissionais” do atleta
+- tela “Resumo global do atleta” para profissionais
+- tela de documentos/exames
+- visualização de restrições físicas / lesões
+- futura visualização de dieta no lado do atleta
+
 ## Pendências visuais e de UX
 - melhorar ainda mais a experiência do builder de força
 - tornar o layout mais próximo do modelo de referência
 - melhorar navegação entre tipos de treino
 - mostrar profissionais ativos do atleta em tela dedicada
+- separar visualmente treinos, dieta, profissionais e provas
 - limpar warnings antigos
 
 ## Situação técnica
