@@ -1,6 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import 'athlete_approved_workouts_screen.dart';
+import 'athlete_my_professionals_screen.dart';
+import 'athlete_search_professionals_screen.dart';
+
 class AthleteAgendaScreen extends StatefulWidget {
   const AthleteAgendaScreen({super.key});
 
@@ -314,6 +318,57 @@ class _AthleteAgendaScreenState extends State<AthleteAgendaScreen> {
     );
   }
 
+  Widget _buildQuickActionsSection() {
+    return _sectionContainer(
+      title: 'Ações rápidas',
+      child: Wrap(
+        spacing: 12,
+        runSpacing: 12,
+        children: [
+          SizedBox(
+            width: 260,
+            child: FilledButton(
+              onPressed: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => const AthleteSearchProfessionalsScreen(),
+                  ),
+                );
+              },
+              child: const Text('Marketplace'),
+            ),
+          ),
+          SizedBox(
+            width: 260,
+            child: FilledButton.tonal(
+              onPressed: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => const AthleteApprovedWorkoutsScreen(),
+                  ),
+                );
+              },
+              child: const Text('Treinos publicados'),
+            ),
+          ),
+          SizedBox(
+            width: 260,
+            child: FilledButton.tonal(
+              onPressed: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => const AthleteMyProfessionalsScreen(),
+                  ),
+                );
+              },
+              child: const Text('Meus profissionais'),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildAthleteSummarySection() {
     final fullName = _s(_profile?['full_name']).isEmpty
         ? 'Atleta'
@@ -597,6 +652,7 @@ class _AthleteAgendaScreenState extends State<AthleteAgendaScreen> {
             child: ListView(
               padding: const EdgeInsets.all(16),
               children: [
+                _buildQuickActionsSection(),
                 _buildAthleteSummarySection(),
                 _buildWorkoutSummarySection(),
                 _buildAgendaSection(),

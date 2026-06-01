@@ -9,6 +9,7 @@ lib/screens/athlete_weekly_availability_edit_screen.dart
 lib/screens/auth_callback_screen.dart
 lib/screens/auth_gate.dart
 lib/screens/coach_athlete_workouts_review_screen.dart
+lib/screens/coach_create_workout_screen.dart
 lib/screens/coach_requests_screen.dart
 lib/screens/coach_workout_edit_screen.dart
 lib/screens/home_router_screen.dart
