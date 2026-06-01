@@ -19,10 +19,17 @@ class _AthleteTargetRacesScreenState extends State<AthleteTargetRacesScreen> {
   final _nameController = TextEditingController();
   final _distanceController = TextEditingController();
   final _altimetryController = TextEditingController();
+  final _notesController = TextEditingController();
+
+  final _swimDistanceController = TextEditingController();
+  final _bikeDistanceController = TextEditingController();
+  final _bikeAltimetryController = TextEditingController();
+  final _runDistanceController = TextEditingController();
+  final _runAltimetryController = TextEditingController();
 
   DateTime? _raceDate;
   String _activityType = 'running';
-  String _priority = 'medium';
+  String _priority = 'b';
   String _status = 'planned';
 
   @override
@@ -36,10 +43,70 @@ class _AthleteTargetRacesScreenState extends State<AthleteTargetRacesScreen> {
     _nameController.dispose();
     _distanceController.dispose();
     _altimetryController.dispose();
+    _notesController.dispose();
+    _swimDistanceController.dispose();
+    _bikeDistanceController.dispose();
+    _bikeAltimetryController.dispose();
+    _runDistanceController.dispose();
+    _runAltimetryController.dispose();
     super.dispose();
   }
 
   String _s(dynamic v) => v == null ? '' : v.toString().trim();
+
+  int? _toInt(String value) {
+    final v = value.trim();
+    if (v.isEmpty) return null;
+    return int.tryParse(v);
+  }
+
+  bool get _isMultisport =>
+      _activityType == 'triathlon' || _activityType == 'swimrun';
+
+  String _activityLabel(String raw) {
+    switch (raw) {
+      case 'running':
+        return 'Corrida';
+      case 'trail_running':
+        return 'Trail Running';
+      case 'swimming':
+        return 'Natação';
+      case 'cycling':
+        return 'Ciclismo';
+      case 'triathlon':
+        return 'Triathlon';
+      case 'swimrun':
+        return 'Swimrun';
+      default:
+        return raw;
+    }
+  }
+
+  String _priorityLabel(String raw) {
+    switch (raw) {
+      case 'a':
+        return 'Alta (A)';
+      case 'b':
+        return 'Média (B)';
+      case 'c':
+        return 'Baixa (C)';
+      default:
+        return raw;
+    }
+  }
+
+  String _statusLabel(String raw) {
+    switch (raw) {
+      case 'planned':
+        return 'Planejada';
+      case 'confirmed':
+        return 'Confirmada';
+      case 'done':
+        return 'Concluída';
+      default:
+        return raw;
+    }
+  }
 
   Future<void> _load() async {
     final user = _client.auth.currentUser;
@@ -65,6 +132,22 @@ class _AthleteTargetRacesScreenState extends State<AthleteTargetRacesScreen> {
     }
   }
 
+  void _clearForm() {
+    _nameController.clear();
+    _distanceController.clear();
+    _altimetryController.clear();
+    _notesController.clear();
+    _swimDistanceController.clear();
+    _bikeDistanceController.clear();
+    _bikeAltimetryController.clear();
+    _runDistanceController.clear();
+    _runAltimetryController.clear();
+    _raceDate = null;
+    _activityType = 'running';
+    _priority = 'b';
+    _status = 'planned';
+  }
+
   Future<void> _createRace() async {
     final user = _client.auth.currentUser;
     if (user == null) return;
@@ -79,17 +162,22 @@ class _AthleteTargetRacesScreenState extends State<AthleteTargetRacesScreen> {
         'athlete_id': user.id,
         'name': _nameController.text.trim(),
         'race_date': _raceDate!.toIso8601String().substring(0, 10),
-        'distance_meters': int.tryParse(_distanceController.text.trim()),
-        'elevation_gain_m': int.tryParse(_altimetryController.text.trim()),
+        'distance_meters': _toInt(_distanceController.text),
+        'elevation_gain_m': _toInt(_altimetryController.text),
         'priority': _priority,
         'status': _status,
         'activity_type_id': _activityType,
+        'notes': _notesController.text.trim().isEmpty
+            ? null
+            : _notesController.text.trim(),
+        'swim_distance_meters': _toInt(_swimDistanceController.text),
+        'bike_distance_meters': _toInt(_bikeDistanceController.text),
+        'bike_elevation_gain_m': _toInt(_bikeAltimetryController.text),
+        'run_distance_meters': _toInt(_runDistanceController.text),
+        'run_elevation_gain_m': _toInt(_runAltimetryController.text),
       });
 
-      _nameController.clear();
-      _distanceController.clear();
-      _altimetryController.clear();
-      _raceDate = null;
+      _clearForm();
       await _load();
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -110,6 +198,168 @@ class _AthleteTargetRacesScreenState extends State<AthleteTargetRacesScreen> {
     }
   }
 
+  Widget _buildMultisportFields() {
+    if (!_isMultisport) return const SizedBox.shrink();
+
+    return Column(
+      children: [
+        const SizedBox(height: 10),
+        if (_activityType == 'triathlon') ...[
+          TextFormField(
+            controller: _swimDistanceController,
+            keyboardType: TextInputType.number,
+            decoration: const InputDecoration(
+              labelText: 'Natação - distância (m)',
+              border: OutlineInputBorder(),
+            ),
+          ),
+          const SizedBox(height: 10),
+        ],
+        Row(
+          children: [
+            Expanded(
+              child: TextFormField(
+                controller: _bikeDistanceController,
+                keyboardType: TextInputType.number,
+                decoration: InputDecoration(
+                  labelText: _activityType == 'swimrun'
+                      ? 'Bloco complementar - distância bike/outro (m)'
+                      : 'Ciclismo - distância (m)',
+                  border: const OutlineInputBorder(),
+                ),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: TextFormField(
+                controller: _bikeAltimetryController,
+                keyboardType: TextInputType.number,
+                decoration: InputDecoration(
+                  labelText: _activityType == 'swimrun'
+                      ? 'Bloco complementar - altimetria (m)'
+                      : 'Ciclismo - altimetria (m)',
+                  border: const OutlineInputBorder(),
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        Row(
+          children: [
+            Expanded(
+              child: TextFormField(
+                controller: _runDistanceController,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(
+                  labelText: 'Corrida - distância (m)',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: TextFormField(
+                controller: _runAltimetryController,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(
+                  labelText: 'Corrida - altimetria (m)',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildRaceCard(Map<String, dynamic> race) {
+    final id = race['id'] as int;
+    final name = _s(race['name']).isEmpty ? 'Prova' : _s(race['name']);
+    final date = _s(race['race_date']);
+    final activity = _activityLabel(_s(race['activity_type_id']));
+    final distance = _s(race['distance_meters']);
+    final elevation = _s(race['elevation_gain_m']);
+    final priority = _priorityLabel(_s(race['priority']));
+    final status = _statusLabel(_s(race['status']));
+    final notes = _s(race['notes']);
+
+    final swimDistance = _s(race['swim_distance_meters']);
+    final bikeDistance = _s(race['bike_distance_meters']);
+    final bikeElevation = _s(race['bike_elevation_gain_m']);
+    final runDistance = _s(race['run_distance_meters']);
+    final runElevation = _s(race['run_elevation_gain_m']);
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    name,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w700,
+                      fontSize: 16,
+                    ),
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.delete_outline),
+                  onPressed: () => _deleteRace(id),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            Wrap(
+              spacing: 12,
+              runSpacing: 8,
+              children: [
+                Text('Data: $date'),
+                Text('Modalidade: $activity'),
+                if (distance.isNotEmpty) Text('Distância total: ${distance}m'),
+                if (elevation.isNotEmpty) Text('Altimetria total: ${elevation}m'),
+                if (priority.isNotEmpty) Text('Prioridade: $priority'),
+                if (status.isNotEmpty) Text('Status: $status'),
+              ],
+            ),
+            if (swimDistance.isNotEmpty ||
+                bikeDistance.isNotEmpty ||
+                bikeElevation.isNotEmpty ||
+                runDistance.isNotEmpty ||
+                runElevation.isNotEmpty) ...[
+              const SizedBox(height: 10),
+              const Text(
+                'Segmentos',
+                style: TextStyle(fontWeight: FontWeight.w700),
+              ),
+              const SizedBox(height: 6),
+              if (swimDistance.isNotEmpty) Text('Natação: ${swimDistance}m'),
+              if (bikeDistance.isNotEmpty || bikeElevation.isNotEmpty)
+                Text(
+                  'Ciclismo/Complementar: ${bikeDistance.isEmpty ? "-" : "${bikeDistance}m"}'
+                  ' • Altimetria: ${bikeElevation.isEmpty ? "-" : "${bikeElevation}m"}',
+                ),
+              if (runDistance.isNotEmpty || runElevation.isNotEmpty)
+                Text(
+                  'Corrida: ${runDistance.isEmpty ? "-" : "${runDistance}m"}'
+                  ' • Altimetria: ${runElevation.isEmpty ? "-" : "${runElevation}m"}',
+                ),
+            ],
+            if (notes.isNotEmpty) ...[
+              const SizedBox(height: 10),
+              Text('Observações: $notes'),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -121,7 +371,10 @@ class _AthleteTargetRacesScreenState extends State<AthleteTargetRacesScreen> {
           if (_msg != null)
             Padding(
               padding: const EdgeInsets.all(12),
-              child: Text(_msg!, style: const TextStyle(color: Colors.red)),
+              child: Text(
+                _msg!,
+                style: const TextStyle(color: Colors.red),
+              ),
             ),
           Expanded(
             child: ListView(
@@ -154,9 +407,12 @@ class _AthleteTargetRacesScreenState extends State<AthleteTargetRacesScreen> {
                         onPressed: () async {
                           final picked = await showDatePicker(
                             context: context,
-                            initialDate: DateTime.now().add(const Duration(days: 30)),
-                            firstDate: DateTime.now().subtract(const Duration(days: 30)),
-                            lastDate: DateTime.now().add(const Duration(days: 3650)),
+                            initialDate:
+                                DateTime.now().add(const Duration(days: 30)),
+                            firstDate:
+                                DateTime.now().subtract(const Duration(days: 30)),
+                            lastDate:
+                                DateTime.now().add(const Duration(days: 3650)),
                           );
                           if (picked != null) {
                             setState(() => _raceDate = picked);
@@ -176,7 +432,7 @@ class _AthleteTargetRacesScreenState extends State<AthleteTargetRacesScreen> {
                               controller: _distanceController,
                               keyboardType: TextInputType.number,
                               decoration: const InputDecoration(
-                                labelText: 'Distância (m)',
+                                labelText: 'Distância total (m)',
                                 border: OutlineInputBorder(),
                               ),
                             ),
@@ -187,7 +443,7 @@ class _AthleteTargetRacesScreenState extends State<AthleteTargetRacesScreen> {
                               controller: _altimetryController,
                               keyboardType: TextInputType.number,
                               decoration: const InputDecoration(
-                                labelText: 'Altimetria (m)',
+                                labelText: 'Altimetria total (m)',
                                 border: OutlineInputBorder(),
                               ),
                             ),
@@ -211,6 +467,7 @@ class _AthleteTargetRacesScreenState extends State<AthleteTargetRacesScreen> {
                         ],
                         onChanged: (v) => setState(() => _activityType = v ?? 'running'),
                       ),
+                      _buildMultisportFields(),
                       const SizedBox(height: 10),
                       Row(
                         children: [
@@ -222,14 +479,11 @@ class _AthleteTargetRacesScreenState extends State<AthleteTargetRacesScreen> {
                                 border: OutlineInputBorder(),
                               ),
                               items: const [
-                                DropdownMenuItem(value: 'low', child: Text('Baixa')),
-                                DropdownMenuItem(value: 'medium', child: Text('Média')),
-                                DropdownMenuItem(value: 'high', child: Text('Alta')),
-                                DropdownMenuItem(value: 'a', child: Text('A')),
-                                DropdownMenuItem(value: 'b', child: Text('B')),
-                                DropdownMenuItem(value: 'c', child: Text('C')),
+                                DropdownMenuItem(value: 'a', child: Text('Alta (A)')),
+                                DropdownMenuItem(value: 'b', child: Text('Média (B)')),
+                                DropdownMenuItem(value: 'c', child: Text('Baixa (C)')),
                               ],
-                              onChanged: (v) => setState(() => _priority = v ?? 'medium'),
+                              onChanged: (v) => setState(() => _priority = v ?? 'b'),
                             ),
                           ),
                           const SizedBox(width: 10),
@@ -250,6 +504,15 @@ class _AthleteTargetRacesScreenState extends State<AthleteTargetRacesScreen> {
                           ),
                         ],
                       ),
+                      const SizedBox(height: 10),
+                      TextFormField(
+                        controller: _notesController,
+                        maxLines: 3,
+                        decoration: const InputDecoration(
+                          labelText: 'Observações',
+                          border: OutlineInputBorder(),
+                        ),
+                      ),
                       const SizedBox(height: 12),
                       FilledButton(
                         onPressed: _createRace,
@@ -262,21 +525,7 @@ class _AthleteTargetRacesScreenState extends State<AthleteTargetRacesScreen> {
                 if (_races.isEmpty)
                   const Center(child: Text('Nenhuma prova alvo cadastrada.'))
                 else
-                  ..._races.map((race) {
-                    final id = race['id'] as int;
-                    return Card(
-                      child: ListTile(
-                        title: Text(_s(race['name']).isEmpty ? 'Prova' : _s(race['name'])),
-                        subtitle: Text(
-                          '${_s(race['race_date'])} • ${_s(race['activity_type_id'])} • ${_s(race['distance_meters'])}m',
-                        ),
-                        trailing: IconButton(
-                          icon: const Icon(Icons.delete_outline),
-                          onPressed: () => _deleteRace(id),
-                        ),
-                      ),
-                    );
-                  }),
+                  ..._races.map(_buildRaceCard),
               ],
             ),
           ),
