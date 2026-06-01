@@ -21,20 +21,17 @@ class _AthleteTargetRacesScreenState extends State<AthleteTargetRacesScreen> {
   final _altimetryController = TextEditingController();
   final _notesController = TextEditingController();
 
-  final _swimDistanceController = TextEditingController();
-  final _bikeDistanceController = TextEditingController();
-  final _bikeAltimetryController = TextEditingController();
-  final _runDistanceController = TextEditingController();
-  final _runAltimetryController = TextEditingController();
-
   DateTime? _raceDate;
   String _activityType = 'running';
   String _priority = 'b';
   String _status = 'planned';
 
+  final List<_RaceSegmentDraft> _segments = [];
+
   @override
   void initState() {
     super.initState();
+    _segments.add(_RaceSegmentDraft());
     _load();
   }
 
@@ -44,11 +41,9 @@ class _AthleteTargetRacesScreenState extends State<AthleteTargetRacesScreen> {
     _distanceController.dispose();
     _altimetryController.dispose();
     _notesController.dispose();
-    _swimDistanceController.dispose();
-    _bikeDistanceController.dispose();
-    _bikeAltimetryController.dispose();
-    _runDistanceController.dispose();
-    _runAltimetryController.dispose();
+    for (final s in _segments) {
+      s.dispose();
+    }
     super.dispose();
   }
 
@@ -59,9 +54,6 @@ class _AthleteTargetRacesScreenState extends State<AthleteTargetRacesScreen> {
     if (v.isEmpty) return null;
     return int.tryParse(v);
   }
-
-  bool get _isMultisport =>
-      _activityType == 'triathlon' || _activityType == 'swimrun';
 
   String _activityLabel(String raw) {
     switch (raw) {
@@ -77,6 +69,10 @@ class _AthleteTargetRacesScreenState extends State<AthleteTargetRacesScreen> {
         return 'Triathlon';
       case 'swimrun':
         return 'Swimrun';
+      case 'strength':
+        return 'Força';
+      case 'other':
+        return 'Outro';
       default:
         return raw;
     }
@@ -137,15 +133,54 @@ class _AthleteTargetRacesScreenState extends State<AthleteTargetRacesScreen> {
     _distanceController.clear();
     _altimetryController.clear();
     _notesController.clear();
-    _swimDistanceController.clear();
-    _bikeDistanceController.clear();
-    _bikeAltimetryController.clear();
-    _runDistanceController.clear();
-    _runAltimetryController.clear();
     _raceDate = null;
     _activityType = 'running';
     _priority = 'b';
     _status = 'planned';
+
+    for (final s in _segments) {
+      s.dispose();
+    }
+    _segments
+      ..clear()
+      ..add(_RaceSegmentDraft());
+  }
+
+  void _addSegment() {
+    setState(() {
+      _segments.add(_RaceSegmentDraft());
+    });
+  }
+
+  void _removeSegment(int index) {
+    if (_segments.length == 1) return;
+    setState(() {
+      _segments[index].dispose();
+      _segments.removeAt(index);
+    });
+  }
+
+  List<Map<String, dynamic>> _buildSegmentsPayload() {
+    return _segments
+        .map((s) => {
+              'modality': s.modality,
+              'distance_meters': _toInt(s.distanceController.text),
+              'elevation_gain_m': _toInt(s.altimetryController.text),
+              'notes': s.notesController.text.trim().isEmpty
+                  ? null
+                  : s.notesController.text.trim(),
+            })
+        .where((row) {
+          final modality = (row['modality'] ?? '').toString().trim();
+          final distance = row['distance_meters'];
+          final elevation = row['elevation_gain_m'];
+          final notes = (row['notes'] ?? '').toString().trim();
+          return modality.isNotEmpty ||
+              distance != null ||
+              elevation != null ||
+              notes.isNotEmpty;
+        })
+        .toList();
   }
 
   Future<void> _createRace() async {
@@ -170,15 +205,12 @@ class _AthleteTargetRacesScreenState extends State<AthleteTargetRacesScreen> {
         'notes': _notesController.text.trim().isEmpty
             ? null
             : _notesController.text.trim(),
-        'swim_distance_meters': _toInt(_swimDistanceController.text),
-        'bike_distance_meters': _toInt(_bikeDistanceController.text),
-        'bike_elevation_gain_m': _toInt(_bikeAltimetryController.text),
-        'run_distance_meters': _toInt(_runDistanceController.text),
-        'run_elevation_gain_m': _toInt(_runAltimetryController.text),
+        'segments_json': _buildSegmentsPayload(),
       });
 
       _clearForm();
       await _load();
+
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Prova alvo salva ✅')),
@@ -198,79 +230,90 @@ class _AthleteTargetRacesScreenState extends State<AthleteTargetRacesScreen> {
     }
   }
 
-  Widget _buildMultisportFields() {
-    if (!_isMultisport) return const SizedBox.shrink();
-
-    return Column(
-      children: [
-        const SizedBox(height: 10),
-        if (_activityType == 'triathlon') ...[
-          TextFormField(
-            controller: _swimDistanceController,
-            keyboardType: TextInputType.number,
+  Widget _buildSegmentCard(int index, _RaceSegmentDraft segment) {
+    return Container(
+      margin: const EdgeInsets.only(top: 10),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(12),
+        color: const Color(0xFFF7F7F9),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'Segmento ${index + 1}',
+                  style: const TextStyle(fontWeight: FontWeight.w700),
+                ),
+              ),
+              if (_segments.length > 1)
+                IconButton(
+                  onPressed: () => _removeSegment(index),
+                  icon: const Icon(Icons.delete_outline),
+                ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          DropdownButtonFormField<String>(
+            initialValue: segment.modality,
             decoration: const InputDecoration(
-              labelText: 'Natação - distância (m)',
+              labelText: 'Modalidade do segmento',
+              border: OutlineInputBorder(),
+            ),
+            items: const [
+              DropdownMenuItem(value: 'running', child: Text('Corrida')),
+              DropdownMenuItem(value: 'trail_running', child: Text('Trail Running')),
+              DropdownMenuItem(value: 'swimming', child: Text('Natação')),
+              DropdownMenuItem(value: 'cycling', child: Text('Ciclismo')),
+              DropdownMenuItem(value: 'transition', child: Text('Transição')),
+              DropdownMenuItem(value: 'hiking', child: Text('Hiking')),
+              DropdownMenuItem(value: 'kayak', child: Text('Caiaque')),
+              DropdownMenuItem(value: 'other', child: Text('Outro')),
+            ],
+            onChanged: (v) {
+              setState(() => segment.modality = v ?? 'running');
+            },
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: TextFormField(
+                  controller: segment.distanceController,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(
+                    labelText: 'Distância (m)',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: TextFormField(
+                  controller: segment.altimetryController,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(
+                    labelText: 'Altimetria (m)',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          TextFormField(
+            controller: segment.notesController,
+            maxLines: 2,
+            decoration: const InputDecoration(
+              labelText: 'Observação do segmento',
               border: OutlineInputBorder(),
             ),
           ),
-          const SizedBox(height: 10),
         ],
-        Row(
-          children: [
-            Expanded(
-              child: TextFormField(
-                controller: _bikeDistanceController,
-                keyboardType: TextInputType.number,
-                decoration: InputDecoration(
-                  labelText: _activityType == 'swimrun'
-                      ? 'Bloco complementar - distância bike/outro (m)'
-                      : 'Ciclismo - distância (m)',
-                  border: const OutlineInputBorder(),
-                ),
-              ),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: TextFormField(
-                controller: _bikeAltimetryController,
-                keyboardType: TextInputType.number,
-                decoration: InputDecoration(
-                  labelText: _activityType == 'swimrun'
-                      ? 'Bloco complementar - altimetria (m)'
-                      : 'Ciclismo - altimetria (m)',
-                  border: const OutlineInputBorder(),
-                ),
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 10),
-        Row(
-          children: [
-            Expanded(
-              child: TextFormField(
-                controller: _runDistanceController,
-                keyboardType: TextInputType.number,
-                decoration: const InputDecoration(
-                  labelText: 'Corrida - distância (m)',
-                  border: OutlineInputBorder(),
-                ),
-              ),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: TextFormField(
-                controller: _runAltimetryController,
-                keyboardType: TextInputType.number,
-                decoration: const InputDecoration(
-                  labelText: 'Corrida - altimetria (m)',
-                  border: OutlineInputBorder(),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ],
+      ),
     );
   }
 
@@ -285,11 +328,10 @@ class _AthleteTargetRacesScreenState extends State<AthleteTargetRacesScreen> {
     final status = _statusLabel(_s(race['status']));
     final notes = _s(race['notes']);
 
-    final swimDistance = _s(race['swim_distance_meters']);
-    final bikeDistance = _s(race['bike_distance_meters']);
-    final bikeElevation = _s(race['bike_elevation_gain_m']);
-    final runDistance = _s(race['run_distance_meters']);
-    final runElevation = _s(race['run_elevation_gain_m']);
+    final segmentsRaw = race['segments_json'];
+    final segments = segmentsRaw is List
+        ? segmentsRaw.cast<Map<String, dynamic>>()
+        : <Map<String, dynamic>>[];
 
     return Card(
       child: Padding(
@@ -320,35 +362,36 @@ class _AthleteTargetRacesScreenState extends State<AthleteTargetRacesScreen> {
               runSpacing: 8,
               children: [
                 Text('Data: $date'),
-                Text('Modalidade: $activity'),
+                Text('Modalidade principal: $activity'),
                 if (distance.isNotEmpty) Text('Distância total: ${distance}m'),
                 if (elevation.isNotEmpty) Text('Altimetria total: ${elevation}m'),
                 if (priority.isNotEmpty) Text('Prioridade: $priority'),
                 if (status.isNotEmpty) Text('Status: $status'),
               ],
             ),
-            if (swimDistance.isNotEmpty ||
-                bikeDistance.isNotEmpty ||
-                bikeElevation.isNotEmpty ||
-                runDistance.isNotEmpty ||
-                runElevation.isNotEmpty) ...[
+            if (segments.isNotEmpty) ...[
               const SizedBox(height: 10),
               const Text(
                 'Segmentos',
                 style: TextStyle(fontWeight: FontWeight.w700),
               ),
               const SizedBox(height: 6),
-              if (swimDistance.isNotEmpty) Text('Natação: ${swimDistance}m'),
-              if (bikeDistance.isNotEmpty || bikeElevation.isNotEmpty)
-                Text(
-                  'Ciclismo/Complementar: ${bikeDistance.isEmpty ? "-" : "${bikeDistance}m"}'
-                  ' • Altimetria: ${bikeElevation.isEmpty ? "-" : "${bikeElevation}m"}',
-                ),
-              if (runDistance.isNotEmpty || runElevation.isNotEmpty)
-                Text(
-                  'Corrida: ${runDistance.isEmpty ? "-" : "${runDistance}m"}'
-                  ' • Altimetria: ${runElevation.isEmpty ? "-" : "${runElevation}m"}',
-                ),
+              ...segments.map((seg) {
+                final modality = _activityLabel(_s(seg['modality']));
+                final segDistance = _s(seg['distance_meters']);
+                final segElevation = _s(seg['elevation_gain_m']);
+                final segNotes = _s(seg['notes']);
+
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 6),
+                  child: Text(
+                    '$modality'
+                    '${segDistance.isNotEmpty ? ' • ${segDistance}m' : ''}'
+                    '${segElevation.isNotEmpty ? ' • ${segElevation}m+' : ''}'
+                    '${segNotes.isNotEmpty ? ' • $segNotes' : ''}',
+                  ),
+                );
+              }),
             ],
             if (notes.isNotEmpty) ...[
               const SizedBox(height: 10),
@@ -454,7 +497,7 @@ class _AthleteTargetRacesScreenState extends State<AthleteTargetRacesScreen> {
                       DropdownButtonFormField<String>(
                         initialValue: _activityType,
                         decoration: const InputDecoration(
-                          labelText: 'Modalidade',
+                          labelText: 'Modalidade principal',
                           border: OutlineInputBorder(),
                         ),
                         items: const [
@@ -464,10 +507,31 @@ class _AthleteTargetRacesScreenState extends State<AthleteTargetRacesScreen> {
                           DropdownMenuItem(value: 'cycling', child: Text('Ciclismo')),
                           DropdownMenuItem(value: 'triathlon', child: Text('Triathlon')),
                           DropdownMenuItem(value: 'swimrun', child: Text('Swimrun')),
+                          DropdownMenuItem(value: 'other', child: Text('Outro')),
                         ],
                         onChanged: (v) => setState(() => _activityType = v ?? 'running'),
                       ),
-                      _buildMultisportFields(),
+                      const SizedBox(height: 10),
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          'Segmentos da prova',
+                          style: Theme.of(context).textTheme.titleMedium,
+                        ),
+                      ),
+                      ...List.generate(
+                        _segments.length,
+                        (index) => _buildSegmentCard(index, _segments[index]),
+                      ),
+                      const SizedBox(height: 10),
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: OutlinedButton.icon(
+                          onPressed: _addSegment,
+                          icon: const Icon(Icons.add),
+                          label: const Text('Adicionar segmento'),
+                        ),
+                      ),
                       const SizedBox(height: 10),
                       Row(
                         children: [
@@ -509,7 +573,7 @@ class _AthleteTargetRacesScreenState extends State<AthleteTargetRacesScreen> {
                         controller: _notesController,
                         maxLines: 3,
                         decoration: const InputDecoration(
-                          labelText: 'Observações',
+                          labelText: 'Observações gerais',
                           border: OutlineInputBorder(),
                         ),
                       ),
@@ -532,5 +596,27 @@ class _AthleteTargetRacesScreenState extends State<AthleteTargetRacesScreen> {
         ],
       ),
     );
+  }
+}
+
+class _RaceSegmentDraft {
+  String modality;
+  final TextEditingController distanceController;
+  final TextEditingController altimetryController;
+  final TextEditingController notesController;
+
+  _RaceSegmentDraft({
+    this.modality = 'running',
+    TextEditingController? distanceController,
+    TextEditingController? altimetryController,
+    TextEditingController? notesController,
+  })  : distanceController = distanceController ?? TextEditingController(),
+        altimetryController = altimetryController ?? TextEditingController(),
+        notesController = notesController ?? TextEditingController();
+
+  void dispose() {
+    distanceController.dispose();
+    altimetryController.dispose();
+    notesController.dispose();
   }
 }
