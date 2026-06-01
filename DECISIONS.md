@@ -1,26 +1,49 @@
 # DECISIONS — TRINIUM SPORTS
 
-## Decisão
-Abandonar temporariamente o fluxo centrado no motor automático como núcleo do MVP.
+## Decisão estrutural do MVP
+O MVP deixou de ser centrado no motor automático e passou a ser centrado em:
+- marketplace
+- vínculo atleta ↔ profissional
+- criação manual de prescrição
+- publicação
+- visualização pelo atleta
 
 ## Motivo
-A complexidade do motor estava travando a evolução do produto e dificultando a entrega do fluxo principal ao usuário final.
+O motor estava adicionando complexidade excessiva e travando a entrega da jornada principal do produto.
 
-## Nova decisão
-O MVP passa a ser centrado em:
-- conexão atleta ↔ profissional
-- criação manual de treinos
-- revisão/publicação
-- agenda e acompanhamento
-- sincronização futura com relógios
+## Decisão de prescrição
+O sistema passa a trabalhar com dois tipos principais:
+1. treinos de endurance
+2. treinos de força
 
-## Decisão estrutural
-Os steps do treino devem ser armazenados já em formato suficientemente estruturado para futura exportação para relógios.
+## Decisão de modelagem
+Treinos de endurance permanecem em:
+- `prescribed_workout_steps`
 
-## Decisão de dados
-A base deve suportar dois sentidos:
-1. envio do treino estruturado para relógio
-2. retorno do realizado pelo atleta para alimentar a base
+Treinos de força passam a usar:
+- `prescribed_strength_exercises`
 
-## Resultado
-A arquitetura atual do MVP ficou mais simples, mais rastreável e mais alinhada com a operação real de treinadores.
+## Decisão de catálogo
+O catálogo de força será próprio do Trinium, inspirado na experiência da Garmin, mas não dependente de uma lista pública oficial da Garmin.
+
+## Decisão de vínculos
+Um atleta pode ter múltiplos profissionais ativos ao mesmo tempo.
+O sistema evita duplicidade do mesmo profissional com o mesmo atleta, mas não bloqueia coexistência entre especialidades.
+
+## Decisão de builder
+Para endurance:
+- step simples
+- bloco de repetição
+- zona como alvo principal
+
+Para força:
+- exercício
+- grupo muscular
+- equipamento
+- meta
+- carga
+- descanso
+- observações
+
+## Decisão de produto
+A sincronização com relógio continua no roadmap, mas não é mais pré-requisito para validar o MVP.
