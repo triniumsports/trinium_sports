@@ -135,6 +135,21 @@ class _AthleteAgendaScreenState extends State<AthleteAgendaScreen> {
     return raw.isEmpty ? 'Geral' : raw;
   }
 
+  String _feedbackLabel(String raw) {
+    switch (raw) {
+      case 'weak':
+        return 'Fraco';
+      case 'normal':
+        return 'Normal';
+      case 'strong':
+        return 'Forte';
+      case 'very_strong':
+        return 'Muito Forte';
+      default:
+        return raw;
+    }
+  }
+
   Map<String, dynamic> _summary() {
     int planned = 0;
     int published = 0;
@@ -179,10 +194,76 @@ class _AthleteAgendaScreenState extends State<AthleteAgendaScreen> {
   }
 
   Future<void> _markCompleted(int workoutId) async {
+    String feedback = 'normal';
+    final notesController = TextEditingController();
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setLocal) {
+            return AlertDialog(
+              title: const Text('Concluir treino'),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  DropdownButtonFormField<String>(
+                    initialValue: feedback,
+                    decoration: const InputDecoration(
+                      labelText: 'Como você se sentiu?',
+                      border: OutlineInputBorder(),
+                    ),
+                    items: const [
+                      DropdownMenuItem(value: 'weak', child: Text('Fraco')),
+                      DropdownMenuItem(value: 'normal', child: Text('Normal')),
+                      DropdownMenuItem(value: 'strong', child: Text('Forte')),
+                      DropdownMenuItem(value: 'very_strong', child: Text('Muito Forte')),
+                    ],
+                    onChanged: (v) => setLocal(() => feedback = v ?? 'normal'),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: notesController,
+                    maxLines: 3,
+                    decoration: const InputDecoration(
+                      labelText: 'Observações',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(false),
+                  child: const Text('Cancelar'),
+                ),
+                FilledButton(
+                  onPressed: () => Navigator.of(context).pop(true),
+                  child: const Text('Concluir'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    if (confirmed != true) {
+      notesController.dispose();
+      return;
+    }
+
     try {
       await _client.from('prescribed_workouts').update({
         'status': 'completed',
+        'completed_at': DateTime.now().toUtc().toIso8601String(),
+        'athlete_feedback': feedback,
+        'athlete_feedback_notes': notesController.text.trim().isEmpty
+            ? null
+            : notesController.text.trim(),
       }).eq('id', workoutId);
+
+      notesController.dispose();
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -190,6 +271,7 @@ class _AthleteAgendaScreenState extends State<AthleteAgendaScreen> {
       );
       await _load();
     } catch (e) {
+      notesController.dispose();
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Erro ao concluir treino: $e')),
@@ -522,22 +604,10 @@ class _AthleteAgendaScreenState extends State<AthleteAgendaScreen> {
               filled: true,
             ),
             items: const [
-              DropdownMenuItem(
-                value: 'planned',
-                child: Text('Planejados'),
-              ),
-              DropdownMenuItem(
-                value: 'published',
-                child: Text('Publicados'),
-              ),
-              DropdownMenuItem(
-                value: 'completed',
-                child: Text('Concluídos'),
-              ),
-              DropdownMenuItem(
-                value: 'all',
-                child: Text('Todos'),
-              ),
+              DropdownMenuItem(value: 'planned', child: Text('Planejados')),
+              DropdownMenuItem(value: 'published', child: Text('Publicados')),
+              DropdownMenuItem(value: 'completed', child: Text('Concluídos')),
+              DropdownMenuItem(value: 'all', child: Text('Todos')),
             ],
             onChanged: (value) {
               setState(() {
@@ -561,6 +631,8 @@ class _AthleteAgendaScreenState extends State<AthleteAgendaScreen> {
                 final durationSec = _n(w['planned_duration_sec']);
                 final activity = _activityLabel(_s(w['activity_type_id']));
                 final professionalName = _s(w['professional_name']);
+                final athleteFeedback = _feedbackLabel(_s(w['athlete_feedback']));
+                final athleteFeedbackNotes = _s(w['athlete_feedback_notes']);
 
                 final status = _s(w['status']);
                 final validationStatus = _s(w['validation_status']);
@@ -605,6 +677,12 @@ class _AthleteAgendaScreenState extends State<AthleteAgendaScreen> {
                         if (description.isNotEmpty) ...[
                           const SizedBox(height: 8),
                           Text(description),
+                        ],
+                        if (chipStatus == 'completed' && athleteFeedback.isNotEmpty) ...[
+                          const SizedBox(height: 8),
+                          Text('Feedback: $athleteFeedback'),
+                          if (athleteFeedbackNotes.isNotEmpty)
+                            Text('Obs: $athleteFeedbackNotes'),
                         ],
                         const SizedBox(height: 12),
                         if (chipStatus == 'published')

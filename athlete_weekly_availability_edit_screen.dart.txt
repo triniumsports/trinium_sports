@@ -13,7 +13,7 @@ class _AthleteWeeklyAvailabilityEditScreenState
     extends State<AthleteWeeklyAvailabilityEditScreen> {
   final _client = Supabase.instance.client;
 
-  final List<Map<String, dynamic>> _days = const [
+  final List<Map<String, dynamic>> _days = [
     {'day': 1, 'label': 'Segunda'},
     {'day': 2, 'label': 'Terça'},
     {'day': 3, 'label': 'Quarta'},
@@ -23,26 +23,16 @@ class _AthleteWeeklyAvailabilityEditScreenState
     {'day': 7, 'label': 'Domingo'},
   ];
 
-  final List<Map<String, String>> _activityOptions = const [
-    {'id': 'running', 'label': 'Corrida'},
-    {'id': 'trail_running', 'label': 'Trail Running'},
-    {'id': 'swimming', 'label': 'Natação'},
-    {'id': 'open_water_swimming', 'label': 'Águas Abertas'},
-    {'id': 'cycling', 'label': 'Ciclismo'},
-    {'id': 'strength', 'label': 'Força'},
-    {'id': 'swimrun', 'label': 'Swimrun'},
-    {'id': 'triathlon', 'label': 'Triathlon'},
-    {'id': 'rest', 'label': 'Descanso'},
-  ];
-
-  final List<Map<String, String>> _timeSlots = const [
-    {'id': 'morning', 'label': 'Manhã'},
-    {'id': 'afternoon', 'label': 'Tarde'},
-    {'id': 'evening', 'label': 'Noite'},
-  ];
-
-  final List<int> _durationOptions = const [
-    30, 45, 60, 75, 90, 105, 120, 150, 180, 210, 240,
+  final List<String> _activityOptions = const [
+    'running',
+    'trail_running',
+    'swimming',
+    'open_water_swimming',
+    'cycling',
+    'strength',
+    'swimrun',
+    'triathlon',
+    'rest',
   ];
 
   bool _loading = true;
@@ -120,12 +110,29 @@ class _AthleteWeeklyAvailabilityEditScreenState
     }
   }
 
-  String _activityLabel(String? id) {
-    final found = _activityOptions.firstWhere(
-      (e) => e['id'] == id,
-      orElse: () => {'id': '', 'label': id ?? ''},
-    );
-    return found['label'] ?? (id ?? '');
+  String _formatDuration(int? sec) {
+    if (sec == null || sec <= 0) return '';
+    final h = sec ~/ 3600;
+    final m = (sec % 3600) ~/ 60;
+    if (h > 0 && m > 0) return '${h}h ${m}min';
+    if (h > 0) return '${h}h';
+    return '${m}min';
+  }
+
+  int? _parseDuration(String value) {
+    final text = value.trim().toLowerCase();
+    if (text.isEmpty) return null;
+
+    final numbers = RegExp(r'\d+').allMatches(text).map((e) => int.parse(e.group(0)!)).toList();
+    if (numbers.isEmpty) return null;
+
+    if (text.contains('h') && text.contains('min') && numbers.length >= 2) {
+      return numbers[0] * 3600 + numbers[1] * 60;
+    }
+    if (text.contains('h')) {
+      return numbers[0] * 3600;
+    }
+    return numbers[0] * 60;
   }
 
   Widget _slotCard({
@@ -135,10 +142,9 @@ class _AthleteWeeklyAvailabilityEditScreenState
     required bool enabled,
     required ValueChanged<Map<String, dynamic>> onChanged,
   }) {
-    final selectedMinutes =
-        ((data['max_duration_sec'] as int?) != null)
-            ? ((data['max_duration_sec'] as int) ~/ 60)
-            : null;
+    final durationController = TextEditingController(
+      text: _formatDuration(data['max_duration_sec'] as int?),
+    );
 
     return Opacity(
       opacity: enabled ? 1 : 0.45,
@@ -159,18 +165,16 @@ class _AthleteWeeklyAvailabilityEditScreenState
               ),
               const SizedBox(height: 10),
               DropdownButtonFormField<String>(
-                initialValue: data['activity_type_id'] as String?,
+                value: data['activity_type_id'] as String?,
                 decoration: const InputDecoration(
                   labelText: 'Modalidade',
                   border: OutlineInputBorder(),
                 ),
                 items: _activityOptions
-                    .map(
-                      (e) => DropdownMenuItem(
-                        value: e['id'],
-                        child: Text(e['label']!),
-                      ),
-                    )
+                    .map((e) => DropdownMenuItem(
+                          value: e,
+                          child: Text(e),
+                        ))
                     .toList(),
                 onChanged: (value) {
                   final updated = Map<String, dynamic>.from(data);
@@ -180,19 +184,16 @@ class _AthleteWeeklyAvailabilityEditScreenState
               ),
               const SizedBox(height: 10),
               DropdownButtonFormField<String>(
-                initialValue: (data['time_slot'] ?? 'morning').toString(),
+                value: (data['time_slot'] ?? 'morning').toString(),
                 decoration: const InputDecoration(
                   labelText: 'Período',
                   border: OutlineInputBorder(),
                 ),
-                items: _timeSlots
-                    .map(
-                      (e) => DropdownMenuItem(
-                        value: e['id'],
-                        child: Text(e['label']!),
-                      ),
-                    )
-                    .toList(),
+                items: const [
+                  DropdownMenuItem(value: 'morning', child: Text('Manhã')),
+                  DropdownMenuItem(value: 'afternoon', child: Text('Tarde')),
+                  DropdownMenuItem(value: 'evening', child: Text('Noite')),
+                ],
                 onChanged: (value) {
                   final updated = Map<String, dynamic>.from(data);
                   updated['time_slot'] = value;
@@ -200,23 +201,15 @@ class _AthleteWeeklyAvailabilityEditScreenState
                 },
               ),
               const SizedBox(height: 10),
-              DropdownButtonFormField<int>(
-                initialValue: selectedMinutes,
+              TextFormField(
+                controller: durationController,
                 decoration: const InputDecoration(
-                  labelText: 'Tempo disponível',
+                  labelText: 'Tempo disponível (ex: 1h 30min ou 90min)',
                   border: OutlineInputBorder(),
                 ),
-                items: _durationOptions
-                    .map(
-                      (m) => DropdownMenuItem(
-                        value: m,
-                        child: Text('$m min'),
-                      ),
-                    )
-                    .toList(),
                 onChanged: (value) {
                   final updated = Map<String, dynamic>.from(data);
-                  updated['max_duration_sec'] = value == null ? null : value * 60;
+                  updated['max_duration_sec'] = _parseDuration(value);
                   onChanged(updated);
                 },
               ),

@@ -7,6 +7,7 @@ import 'athlete_approved_workouts_screen.dart';
 import 'athlete_my_professionals_screen.dart';
 import 'athlete_profile_form_screen.dart';
 import 'athlete_search_professionals_screen.dart';
+import 'athlete_target_races_screen.dart';
 import 'athlete_weekly_availability_edit_screen.dart';
 import 'auth_gate.dart';
 import 'coach_create_workout_screen.dart';
@@ -308,10 +309,7 @@ class AthleteHomeScreen extends StatelessWidget {
               children: [
                 const Text(
                   'Disponibilidade semanal',
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w700,
-                  ),
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
                 ),
                 const SizedBox(height: 8),
                 const Text(
@@ -345,10 +343,7 @@ class AthleteHomeScreen extends StatelessWidget {
                     children: [
                       const Text(
                         'Marketplace',
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w700,
-                        ),
+                        style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
                       ),
                       const SizedBox(height: 8),
                       const Text(
@@ -378,10 +373,7 @@ class AthleteHomeScreen extends StatelessWidget {
                     children: [
                       const Text(
                         'Treinos publicados',
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w700,
-                        ),
+                        style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
                       ),
                       const SizedBox(height: 8),
                       const Text(
@@ -411,10 +403,7 @@ class AthleteHomeScreen extends StatelessWidget {
                     children: [
                       const Text(
                         'Meus profissionais',
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w700,
-                        ),
+                        style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
                       ),
                       const SizedBox(height: 8),
                       const Text(
@@ -431,6 +420,35 @@ class AthleteHomeScreen extends StatelessWidget {
                           );
                         },
                         child: const Text('Ver profissionais'),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              SizedBox(
+                width: 320,
+                child: _HomeCard(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Provas alvo',
+                        style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+                      ),
+                      const SizedBox(height: 8),
+                      const Text(
+                        'Cadastre, revise e atualize seu calendário de provas.',
+                      ),
+                      const SizedBox(height: 12),
+                      FilledButton.tonal(
+                        onPressed: () {
+                          Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (_) => const AthleteTargetRacesScreen(),
+                            ),
+                          );
+                        },
+                        child: const Text('Gerenciar provas'),
                       ),
                     ],
                   ),

@@ -38,7 +38,6 @@ class _CoachAthleteSummaryScreenState extends State<CoachAthleteSummaryScreen> {
   }
 
   String _s(dynamic v) => v == null ? '' : v.toString().trim();
-
   num _n(dynamic v) => v is num ? v : 0;
 
   String _dateText(dynamic v) {
@@ -60,6 +59,12 @@ class _CoachAthleteSummaryScreenState extends State<CoachAthleteSummaryScreen> {
           .from('v_athlete_global_summary')
           .select()
           .eq('athlete_id', widget.athleteId)
+          .maybeSingle();
+
+      final athleteRaw = await _client
+          .from('athletes')
+          .select('dietary_restrictions_details')
+          .eq('id', widget.athleteId)
           .maybeSingle();
 
       final careTeamRes = await _client
@@ -97,6 +102,12 @@ class _CoachAthleteSummaryScreenState extends State<CoachAthleteSummaryScreen> {
       _summary = summaryRes == null
           ? null
           : Map<String, dynamic>.from(summaryRes as Map);
+
+      if (athleteRaw != null && _summary != null) {
+        _summary!['dietary_restrictions_details'] =
+            athleteRaw['dietary_restrictions_details'];
+      }
+
       _careTeam = (careTeamRes as List).cast<Map<String, dynamic>>();
       _injuries = (injuriesRes as List).cast<Map<String, dynamic>>();
       _publishedWorkouts = (workoutsRes as List).cast<Map<String, dynamic>>();
@@ -180,46 +191,24 @@ class _CoachAthleteSummaryScreenState extends State<CoachAthleteSummaryScreen> {
     switch (s) {
       case '1':
       case 'monday':
-      case 'mon':
-      case 'segunda':
-      case 'segunda-feira':
         return 'Segunda';
       case '2':
       case 'tuesday':
-      case 'tue':
-      case 'terça':
-      case 'terca':
-      case 'terça-feira':
-      case 'terca-feira':
         return 'Terça';
       case '3':
       case 'wednesday':
-      case 'wed':
-      case 'quarta':
-      case 'quarta-feira':
         return 'Quarta';
       case '4':
       case 'thursday':
-      case 'thu':
-      case 'quinta':
-      case 'quinta-feira':
         return 'Quinta';
       case '5':
       case 'friday':
-      case 'fri':
-      case 'sexta':
-      case 'sexta-feira':
         return 'Sexta';
       case '6':
       case 'saturday':
-      case 'sat':
-      case 'sábado':
-      case 'sabado':
         return 'Sábado';
       case '7':
       case 'sunday':
-      case 'sun':
-      case 'domingo':
         return 'Domingo';
       default:
         return s.isEmpty ? '-' : s;
@@ -243,9 +232,10 @@ class _CoachAthleteSummaryScreenState extends State<CoachAthleteSummaryScreen> {
     num totalDurationSec = 0;
     num totalDistanceMeters = 0;
 
-    final Map<String, int> byActivity = {};
+    final Map<String, int> byActivitySessions = {};
     final Map<String, int> byMuscleGroup = {};
     final Map<String, Map<String, num>> byWeek = {};
+    final Map<String, Map<String, int>> byWeekActivity = {};
 
     final workoutMap = <int, Map<String, dynamic>>{};
     for (final w in _publishedWorkouts) {
@@ -255,7 +245,7 @@ class _CoachAthleteSummaryScreenState extends State<CoachAthleteSummaryScreen> {
       }
 
       final activity = _activityLabel(_s(w['activity_type_id']));
-      byActivity[activity] = (byActivity[activity] ?? 0) + 1;
+      byActivitySessions[activity] = (byActivitySessions[activity] ?? 0) + 1;
 
       final status = _s(w['status']);
       if (status == 'completed') totalCompleted++;
@@ -275,6 +265,10 @@ class _CoachAthleteSummaryScreenState extends State<CoachAthleteSummaryScreen> {
             (byWeek[weekKey]!['hours_sec'] ?? 0) + duration;
         byWeek[weekKey]!['sessions'] =
             (byWeek[weekKey]!['sessions'] ?? 0) + 1;
+
+        byWeekActivity.putIfAbsent(weekKey, () => {});
+        byWeekActivity[weekKey]![activity] =
+            (byWeekActivity[weekKey]![activity] ?? 0) + 1;
       }
     }
 
@@ -284,9 +278,8 @@ class _CoachAthleteSummaryScreenState extends State<CoachAthleteSummaryScreen> {
         final rawValue = _n(step['duration_value']);
         final unit = _s(step['duration_unit']).toLowerCase();
         num meters = rawValue;
-        if (unit == 'km') {
-          meters = rawValue * 1000;
-        }
+        if (unit == 'km') meters = rawValue * 1000;
+
         totalDistanceMeters += meters;
 
         final workoutId = step['prescribed_workout_id'];
@@ -321,9 +314,10 @@ class _CoachAthleteSummaryScreenState extends State<CoachAthleteSummaryScreen> {
       'total_completed': totalCompleted,
       'total_duration_sec': totalDurationSec,
       'total_distance_m': totalDistanceMeters,
-      'by_activity': byActivity,
+      'by_activity_sessions': byActivitySessions,
       'by_muscle_group': byMuscleGroup,
       'by_week': weekEntries,
+      'by_week_activity': byWeekActivity,
     };
   }
 
@@ -430,8 +424,21 @@ class _CoachAthleteSummaryScreenState extends State<CoachAthleteSummaryScreen> {
     final restingHr = _s(_summary?['resting_hr']);
     final maxHr = _s(_summary?['max_hr']);
     final phase = _s(_summary?['phase']);
-    final dietaryRestrictions = _s(_summary?['dietary_restrictions']);
     final garmin = _summary?['garmin_connected'] == true ? 'Sim' : 'Não';
+
+    final dietDetails = _summary?['dietary_restrictions_details'];
+    final allergies =
+        dietDetails is Map ? (dietDetails['allergies'] ?? '').toString() : '';
+    final intolerances =
+        dietDetails is Map ? (dietDetails['intolerances'] ?? '').toString() : '';
+    final preferences =
+        dietDetails is Map ? (dietDetails['preferences'] ?? '').toString() : '';
+    final medical =
+        dietDetails is Map ? (dietDetails['medical'] ?? '').toString() : '';
+    final supplements =
+        dietDetails is Map ? (dietDetails['supplements'] ?? '').toString() : '';
+    final dietNotes =
+        dietDetails is Map ? (dietDetails['notes'] ?? '').toString() : '';
 
     return _sectionContainer(
       title: 'Resumo global do atleta',
@@ -511,13 +518,27 @@ class _CoachAthleteSummaryScreenState extends State<CoachAthleteSummaryScreen> {
               ),
             ],
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 18),
           const Text(
-            'Restrições alimentares',
+            'Restrições alimentares detalhadas',
             style: TextStyle(fontWeight: FontWeight.w700),
           ),
-          const SizedBox(height: 6),
-          Text(dietaryRestrictions.isEmpty ? '-' : dietaryRestrictions),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 12,
+            runSpacing: 12,
+            children: [
+              _metricCard(title: 'Alergias', value: allergies.isEmpty ? '-' : allergies),
+              _metricCard(title: 'Intolerâncias', value: intolerances.isEmpty ? '-' : intolerances),
+              _metricCard(title: 'Preferências', value: preferences.isEmpty ? '-' : preferences),
+              _metricCard(title: 'Restrição médica', value: medical.isEmpty ? '-' : medical),
+              _metricCard(title: 'Suplementos', value: supplements.isEmpty ? '-' : supplements),
+            ],
+          ),
+          if (dietNotes.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            Text('Observações: $dietNotes'),
+          ],
         ],
       ),
     );
@@ -592,8 +613,11 @@ class _CoachAthleteSummaryScreenState extends State<CoachAthleteSummaryScreen> {
 
     final sorted = List<Map<String, dynamic>>.from(_weeklyConstraints)
       ..sort((a, b) {
-        final av = _s(a['day_of_week']);
-        final bv = _s(b['day_of_week']);
+        final av = _n(a['day_of_week']);
+        final bv = _n(b['day_of_week']);
+        if (av == bv) {
+          return _n(a['slot_order']).compareTo(_n(b['slot_order']));
+        }
         return av.compareTo(bv);
       });
 
@@ -602,19 +626,11 @@ class _CoachAthleteSummaryScreenState extends State<CoachAthleteSummaryScreen> {
       child: Column(
         children: sorted.map((row) {
           final day = _weekdayLabel(row['day_of_week']);
-          final activity = _activityLabel(
-            _s(row['activity_type_id']).isEmpty
-                ? _s(row['activity_type'])
-                : _s(row['activity_type_id']),
-          );
-          final startTime = _s(row['start_time']);
-          final endTime = _s(row['end_time']);
+          final activity = _activityLabel(_s(row['activity_type_id']));
           final slot = _s(row['time_slot']);
-          final minutes = _s(row['max_duration_minutes']).isNotEmpty
-              ? _s(row['max_duration_minutes'])
-              : _s(row['available_minutes']);
+          final maxDurationSec = _n(row['max_duration_sec']);
           final notes = _s(row['notes']);
-          final isAvailable = row['is_available'];
+          final slotOrder = _n(row['slot_order']).toInt();
 
           return Container(
             width: double.infinity,
@@ -628,7 +644,7 @@ class _CoachAthleteSummaryScreenState extends State<CoachAthleteSummaryScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  day,
+                  '$day • ${slotOrder == 1 ? 'Opção principal' : 'Opção secundária'}',
                   style: const TextStyle(fontWeight: FontWeight.w700),
                 ),
                 const SizedBox(height: 8),
@@ -636,12 +652,10 @@ class _CoachAthleteSummaryScreenState extends State<CoachAthleteSummaryScreen> {
                   spacing: 12,
                   runSpacing: 8,
                   children: [
-                    if (activity.isNotEmpty) Text('Atividade: $activity'),
+                    if (activity.isNotEmpty) Text('Modalidade: $activity'),
                     if (slot.isNotEmpty) Text('Período: $slot'),
-                    if (startTime.isNotEmpty) Text('Início: $startTime'),
-                    if (endTime.isNotEmpty) Text('Fim: $endTime'),
-                    if (minutes.isNotEmpty) Text('Tempo disponível: ${minutes} min'),
-                    if (isAvailable != null) Text('Disponível: ${isAvailable == true ? 'Sim' : 'Não'}'),
+                    if (maxDurationSec > 0)
+                      Text('Tempo disponível: ${(maxDurationSec / 60).toStringAsFixed(0)} min'),
                   ],
                 ),
                 if (notes.isNotEmpty) ...[
@@ -686,10 +700,7 @@ class _CoachAthleteSummaryScreenState extends State<CoachAthleteSummaryScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  name,
-                  style: const TextStyle(fontWeight: FontWeight.w700),
-                ),
+                Text(name, style: const TextStyle(fontWeight: FontWeight.w700)),
                 const SizedBox(height: 4),
                 Text(role),
                 if (email.isNotEmpty) Text('E-mail: $email'),
@@ -735,10 +746,7 @@ class _CoachAthleteSummaryScreenState extends State<CoachAthleteSummaryScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  title,
-                  style: const TextStyle(fontWeight: FontWeight.w700),
-                ),
+                Text(title, style: const TextStyle(fontWeight: FontWeight.w700)),
                 const SizedBox(height: 6),
                 Wrap(
                   spacing: 12,
@@ -771,9 +779,10 @@ class _CoachAthleteSummaryScreenState extends State<CoachAthleteSummaryScreen> {
 
   Widget _buildDashboardSection() {
     final d = _loadDashboard();
-    final byActivity = (d['by_activity'] as Map<String, int>);
+    final byActivitySessions = (d['by_activity_sessions'] as Map<String, int>);
     final byMuscleGroup = (d['by_muscle_group'] as Map<String, int>);
     final byWeek = (d['by_week'] as List<MapEntry<String, Map<String, num>>>);
+    final byWeekActivity = (d['by_week_activity'] as Map<String, Map<String, int>>);
 
     return _sectionContainer(
       title: 'Dashboard de carga',
@@ -812,13 +821,13 @@ class _CoachAthleteSummaryScreenState extends State<CoachAthleteSummaryScreen> {
             style: TextStyle(fontWeight: FontWeight.w700),
           ),
           const SizedBox(height: 8),
-          if (byActivity.isEmpty)
+          if (byActivitySessions.isEmpty)
             const Text('Sem distribuição por modalidade.')
           else
             Wrap(
               spacing: 8,
               runSpacing: 8,
-              children: byActivity.entries.map((entry) {
+              children: byActivitySessions.entries.map((entry) {
                 return Container(
                   padding:
                       const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
@@ -826,13 +835,13 @@ class _CoachAthleteSummaryScreenState extends State<CoachAthleteSummaryScreen> {
                     borderRadius: BorderRadius.circular(20),
                     color: const Color(0xFFE9EDF5),
                   ),
-                  child: Text('${entry.key}: ${entry.value}'),
+                  child: Text('${entry.key}: ${entry.value} sessões'),
                 );
               }).toList(),
             ),
           const SizedBox(height: 18),
           const Text(
-            'Carga por grupo muscular',
+            'Carga de força por grupo muscular',
             style: TextStyle(fontWeight: FontWeight.w700),
           ),
           const SizedBox(height: 8),
@@ -850,7 +859,7 @@ class _CoachAthleteSummaryScreenState extends State<CoachAthleteSummaryScreen> {
                     borderRadius: BorderRadius.circular(20),
                     color: const Color(0xFFE9EDF5),
                   ),
-                  child: Text('${entry.key}: ${entry.value}'),
+                  child: Text('${entry.key}: ${entry.value} exercícios'),
                 );
               }).toList(),
             ),
@@ -870,6 +879,7 @@ class _CoachAthleteSummaryScreenState extends State<CoachAthleteSummaryScreen> {
                 final hoursSec = _n(data['hours_sec']);
                 final distanceM = _n(data['distance_m']);
                 final sessions = _n(data['sessions']);
+                final activities = byWeekActivity[week] ?? {};
 
                 return Container(
                   width: double.infinity,
@@ -879,17 +889,42 @@ class _CoachAthleteSummaryScreenState extends State<CoachAthleteSummaryScreen> {
                     borderRadius: BorderRadius.circular(12),
                     color: const Color(0xFFF7F7F9),
                   ),
-                  child: Wrap(
-                    spacing: 12,
-                    runSpacing: 8,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        'Semana de $week',
-                        style: const TextStyle(fontWeight: FontWeight.w700),
+                      Wrap(
+                        spacing: 12,
+                        runSpacing: 8,
+                        children: [
+                          Text(
+                            'Semana de $week',
+                            style: const TextStyle(fontWeight: FontWeight.w700),
+                          ),
+                          Text('Sessões: ${sessions.toInt()}'),
+                          Text('Horas: ${(hoursSec / 3600).toStringAsFixed(1)}h'),
+                          Text('Distância: ${(distanceM / 1000).toStringAsFixed(1)} km'),
+                        ],
                       ),
-                      Text('Sessões: ${sessions.toInt()}'),
-                      Text('Horas: ${(hoursSec / 3600).toStringAsFixed(1)}h'),
-                      Text('Distância: ${(distanceM / 1000).toStringAsFixed(1)} km'),
+                      if (activities.isNotEmpty) ...[
+                        const SizedBox(height: 8),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: activities.entries.map((a) {
+                            return Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 10,
+                                vertical: 6,
+                              ),
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(20),
+                                color: const Color(0xFFE9EDF5),
+                              ),
+                              child: Text('${a.key}: ${a.value}'),
+                            );
+                          }).toList(),
+                        ),
+                      ],
                     ],
                   ),
                 );

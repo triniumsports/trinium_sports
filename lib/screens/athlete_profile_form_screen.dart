@@ -43,7 +43,13 @@ class _AthleteProfileFormScreenState extends State<AthleteProfileFormScreen> {
       TextEditingController(text: '1600');
   final TextEditingController _phaseController =
       TextEditingController(text: 'base');
-  final TextEditingController _dietController = TextEditingController();
+
+  final TextEditingController _allergiesController = TextEditingController();
+  final TextEditingController _intolerancesController = TextEditingController();
+  final TextEditingController _preferencesController = TextEditingController();
+  final TextEditingController _medicalDietController = TextEditingController();
+  final TextEditingController _supplementsController = TextEditingController();
+  final TextEditingController _dietNotesController = TextEditingController();
 
   @override
   void dispose() {
@@ -55,7 +61,12 @@ class _AthleteProfileFormScreenState extends State<AthleteProfileFormScreen> {
     _vo2Controller.dispose();
     _bmrController.dispose();
     _phaseController.dispose();
-    _dietController.dispose();
+    _allergiesController.dispose();
+    _intolerancesController.dispose();
+    _preferencesController.dispose();
+    _medicalDietController.dispose();
+    _supplementsController.dispose();
+    _dietNotesController.dispose();
     super.dispose();
   }
 
@@ -117,9 +128,20 @@ class _AthleteProfileFormScreenState extends State<AthleteProfileFormScreen> {
           (athlete?['basal_metabolic_rate'] ?? 1600).toString();
       _phaseController.text = (athlete?['phase'] ?? 'base').toString();
 
-      final diets = athlete?['dietary_restrictions'];
-      if (diets is List) {
-        _dietController.text = diets.map((e) => e.toString()).join(', ');
+      final dietDetails = athlete?['dietary_restrictions_details'];
+      if (dietDetails is Map) {
+        _allergiesController.text =
+            (dietDetails['allergies'] ?? '').toString();
+        _intolerancesController.text =
+            (dietDetails['intolerances'] ?? '').toString();
+        _preferencesController.text =
+            (dietDetails['preferences'] ?? '').toString();
+        _medicalDietController.text =
+            (dietDetails['medical'] ?? '').toString();
+        _supplementsController.text =
+            (dietDetails['supplements'] ?? '').toString();
+        _dietNotesController.text =
+            (dietDetails['notes'] ?? '').toString();
       }
     } catch (e) {
       _msg = 'Erro ao carregar dados: $e';
@@ -251,6 +273,15 @@ class _AthleteProfileFormScreenState extends State<AthleteProfileFormScreen> {
         'avatar_url': _avatarUrl,
       }).eq('id', user.id);
 
+      final dietDetails = {
+        'allergies': _allergiesController.text.trim(),
+        'intolerances': _intolerancesController.text.trim(),
+        'preferences': _preferencesController.text.trim(),
+        'medical': _medicalDietController.text.trim(),
+        'supplements': _supplementsController.text.trim(),
+        'notes': _dietNotesController.text.trim(),
+      };
+
       await _client.from('athletes').upsert({
         'id': user.id,
         'birth_date': _birthDate!.toIso8601String().substring(0, 10),
@@ -266,13 +297,13 @@ class _AthleteProfileFormScreenState extends State<AthleteProfileFormScreen> {
         'phase': _phaseController.text.trim().isEmpty
             ? 'base'
             : _phaseController.text.trim(),
-        'dietary_restrictions': _dietController.text.trim().isEmpty
-            ? null
-            : _dietController.text
-                .split(',')
-                .map((e) => e.trim())
-                .where((e) => e.isNotEmpty)
-                .toList(),
+        'dietary_restrictions_details': dietDetails,
+        'dietary_restrictions': [
+          _allergiesController.text.trim(),
+          _intolerancesController.text.trim(),
+          _preferencesController.text.trim(),
+          _medicalDietController.text.trim(),
+        ].where((e) => e.isNotEmpty).toList(),
       });
 
       await _client.from('athlete_capacity').upsert({'athlete_id': user.id});
@@ -289,6 +320,16 @@ class _AthleteProfileFormScreenState extends State<AthleteProfileFormScreen> {
     }
   }
 
+  Widget _sectionTitle(String text) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10, top: 6),
+      child: Text(
+        text,
+        style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_loading) {
@@ -301,7 +342,7 @@ class _AthleteProfileFormScreenState extends State<AthleteProfileFormScreen> {
       appBar: AppBar(title: const Text('Perfil do Atleta')),
       body: Center(
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 760),
+          constraints: const BoxConstraints(maxWidth: 820),
           child: Padding(
             padding: const EdgeInsets.all(24),
             child: Form(
@@ -319,9 +360,10 @@ class _AthleteProfileFormScreenState extends State<AthleteProfileFormScreen> {
                   ),
                   if (_avatarUrl != null) ...[
                     const SizedBox(height: 8),
-                    Text('Foto OK ✅', textAlign: TextAlign.center),
+                    const Text('Foto OK ✅', textAlign: TextAlign.center),
                   ],
                   const SizedBox(height: 16),
+                  _sectionTitle('Dados gerais'),
                   TextFormField(
                     controller: _nameController,
                     decoration: const InputDecoration(
@@ -357,18 +399,9 @@ class _AthleteProfileFormScreenState extends State<AthleteProfileFormScreen> {
                       border: OutlineInputBorder(),
                     ),
                     items: const [
-                      DropdownMenuItem(
-                        value: 'male',
-                        child: Text('Masculino'),
-                      ),
-                      DropdownMenuItem(
-                        value: 'female',
-                        child: Text('Feminino'),
-                      ),
-                      DropdownMenuItem(
-                        value: 'other',
-                        child: Text('Outro'),
-                      ),
+                      DropdownMenuItem(value: 'male', child: Text('Masculino')),
+                      DropdownMenuItem(value: 'female', child: Text('Feminino')),
+                      DropdownMenuItem(value: 'other', child: Text('Outro')),
                     ],
                     onChanged: (v) => setState(() => _gender = v ?? 'male'),
                   ),
@@ -380,22 +413,10 @@ class _AthleteProfileFormScreenState extends State<AthleteProfileFormScreen> {
                       border: OutlineInputBorder(),
                     ),
                     items: const [
-                      DropdownMenuItem(
-                        value: 'beginner',
-                        child: Text('Iniciante'),
-                      ),
-                      DropdownMenuItem(
-                        value: 'intermediate',
-                        child: Text('Intermediário'),
-                      ),
-                      DropdownMenuItem(
-                        value: 'advanced',
-                        child: Text('Avançado'),
-                      ),
-                      DropdownMenuItem(
-                        value: 'elite',
-                        child: Text('Elite'),
-                      ),
+                      DropdownMenuItem(value: 'beginner', child: Text('Iniciante')),
+                      DropdownMenuItem(value: 'intermediate', child: Text('Intermediário')),
+                      DropdownMenuItem(value: 'advanced', child: Text('Avançado')),
+                      DropdownMenuItem(value: 'elite', child: Text('Elite')),
                     ],
                     onChanged: (v) =>
                         setState(() => _experience = v ?? 'intermediate'),
@@ -459,22 +480,10 @@ class _AthleteProfileFormScreenState extends State<AthleteProfileFormScreen> {
                       border: OutlineInputBorder(),
                     ),
                     items: const [
-                      DropdownMenuItem(
-                        value: 'beginner',
-                        child: Text('Iniciante'),
-                      ),
-                      DropdownMenuItem(
-                        value: 'intermediate',
-                        child: Text('Intermediário'),
-                      ),
-                      DropdownMenuItem(
-                        value: 'advanced',
-                        child: Text('Avançado'),
-                      ),
-                      DropdownMenuItem(
-                        value: 'elite',
-                        child: Text('Elite'),
-                      ),
+                      DropdownMenuItem(value: 'beginner', child: Text('Iniciante')),
+                      DropdownMenuItem(value: 'intermediate', child: Text('Intermediário')),
+                      DropdownMenuItem(value: 'advanced', child: Text('Avançado')),
+                      DropdownMenuItem(value: 'elite', child: Text('Elite')),
                     ],
                     onChanged: (v) =>
                         setState(() => _fitnessLevel = v ?? 'intermediate'),
@@ -496,12 +505,53 @@ class _AthleteProfileFormScreenState extends State<AthleteProfileFormScreen> {
                       border: OutlineInputBorder(),
                     ),
                   ),
+                  const SizedBox(height: 18),
+                  _sectionTitle('Restrições alimentares detalhadas'),
+                  TextFormField(
+                    controller: _allergiesController,
+                    decoration: const InputDecoration(
+                      labelText: 'Alergias',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
                   const SizedBox(height: 12),
                   TextFormField(
-                    controller: _dietController,
+                    controller: _intolerancesController,
                     decoration: const InputDecoration(
-                      labelText:
-                          'Restrições alimentares (opcional, separadas por vírgula)',
+                      labelText: 'Intolerâncias',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextFormField(
+                    controller: _preferencesController,
+                    decoration: const InputDecoration(
+                      labelText: 'Preferências alimentares',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextFormField(
+                    controller: _medicalDietController,
+                    decoration: const InputDecoration(
+                      labelText: 'Restrição alimentar médica',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextFormField(
+                    controller: _supplementsController,
+                    decoration: const InputDecoration(
+                      labelText: 'Suplementos em uso',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextFormField(
+                    controller: _dietNotesController,
+                    maxLines: 3,
+                    decoration: const InputDecoration(
+                      labelText: 'Observações nutricionais',
                       border: OutlineInputBorder(),
                     ),
                   ),
