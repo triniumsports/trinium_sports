@@ -10,6 +10,9 @@ Hoje o produto já cobre:
 - criação manual de treinos de endurance
 - criação manual de treinos de força
 - publicação e visualização de treinos no app
+- provas alvo
+- disponibilidade semanal estruturada
+- feedback do atleta ao concluir treino
 - base preparada para nutrição, fisioterapia e médico
 - base preparada para futura sincronização com relógios
 
@@ -25,6 +28,8 @@ Foram estruturados e/ou ajustados:
 - `strength_muscle_groups`
 - `strength_equipment_types`
 - `strength_exercises_catalog`
+- `target_races`
+- `weekly_constraints`
 
 ## Novas estruturas da camada 360°
 Foram modeladas para suportar visão clínica e compartilhada do atleta:
@@ -49,9 +54,11 @@ Foram modeladas para suportar visão clínica e compartilhada do atleta:
 - o sistema evita duplicidade do mesmo profissional com o mesmo atleta
 - treinos de endurance usam `prescribed_workout_steps`
 - treinos de força usam `prescribed_strength_exercises`
+- provas alvo já podem ser cadastradas em múltiplos registros
+- disponibilidade semanal já foi estruturada com opção principal/secundária
 - o atleta já consegue visualizar treinos publicados dos dois tipos
 - o builder de força já usa catálogo com filtro por grupo muscular e equipamento
-- o ecossistema agora inclui médico como papel previsto na arquitetura
+- o ecossistema inclui médico como papel previsto na arquitetura
 
 ## Frontend
 Fluxo principal ajustado:
@@ -64,19 +71,11 @@ Fluxo principal ajustado:
 - `athlete_agenda_screen.dart`
 - `athlete_approved_workouts_screen.dart`
 - `athlete_profile_form_screen.dart`
+- `athlete_target_races_screen.dart`
+- `athlete_weekly_availability_edit_screen.dart`
+- `athlete_my_professionals_screen.dart`
+- `coach_athlete_summary_screen.dart`
 - `professional_profile_form_screen.dart`
-
-## Fluxo atual do MVP
-1. atleta faz login
-2. atleta completa perfil
-3. atleta busca profissionais no marketplace
-4. atleta solicita vínculo
-5. profissional aceita vínculo
-6. profissional cria treino manual
-7. profissional publica treino
-8. atleta visualiza treinos publicados
-9. atleta acompanha agenda
-10. treinos de endurance e força já aparecem de forma adequada no app
 
 ## Nova direção do produto
 O Trinium passa a se posicionar como plataforma colaborativa de performance, saúde e prevenção, conectando:
@@ -85,6 +84,14 @@ O Trinium passa a se posicionar como plataforma colaborativa de performance, sa�
 - nutricionistas
 - fisioterapeutas
 - médicos
+
+## Próxima macrofase
+Dashboard 360°:
+- Home do Atleta unificada
+- Home do Profissional unificada
+- controle de carga
+- visão planejado vs executado
+- futura camada corporal/muscular interativa
 
 ## Situação do analyze
 Projeto compilando sem erro bloqueante, com warnings antigos ainda pendentes de limpeza.
