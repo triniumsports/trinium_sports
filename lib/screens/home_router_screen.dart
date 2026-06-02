@@ -11,8 +11,8 @@ import 'athlete_search_professionals_screen.dart';
 import 'athlete_target_races_screen.dart';
 import 'athlete_weekly_availability_edit_screen.dart';
 import 'auth_gate.dart';
-import 'coach_create_workout_screen.dart';
 import 'coach_requests_screen.dart';
+import 'professional_home_dashboard_screen.dart';
 import 'professional_profile_form_screen.dart';
 
 class HomeRouterScreen extends StatefulWidget {
@@ -154,7 +154,7 @@ class _HomeRouterScreenState extends State<HomeRouterScreen> {
     final displayName = (coach['display_name'] ?? '').toString().trim();
 
     _resolved = isComplete
-        ? ProfessionalHomeScreen(
+        ? ProfessionalHomeDashboardScreen(
             fullName: displayName.isNotEmpty
                 ? displayName
                 : (fullName.isEmpty ? 'Profissional' : fullName),
@@ -181,79 +181,6 @@ class _HomeRouterScreenState extends State<HomeRouterScreen> {
     }
 
     return _resolved!;
-  }
-}
-
-class BaseHomeScaffold extends StatelessWidget {
-  final String title;
-  final String subtitle;
-  final List<Widget> actions;
-
-  const BaseHomeScaffold({
-    super.key,
-    required this.title,
-    required this.subtitle,
-    required this.actions,
-  });
-
-  Future<void> _logout(BuildContext context) async {
-    await AuthService().signOut();
-    if (!context.mounted) return;
-
-    Navigator.of(context).pushAndRemoveUntil(
-      MaterialPageRoute(builder: (_) => const AuthGate()),
-      (route) => false,
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xFFF4F6FA),
-      appBar: AppBar(
-        title: Text(title),
-        actions: [
-          TextButton(
-            onPressed: () => _logout(context),
-            child: const Text('Sair'),
-          ),
-        ],
-      ),
-      body: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 1100),
-          child: ListView(
-            padding: const EdgeInsets.all(20),
-            children: [
-              Container(
-                padding: const EdgeInsets.all(20),
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(20),
-                  color: Colors.white,
-                  boxShadow: const [
-                    BoxShadow(
-                      blurRadius: 18,
-                      offset: Offset(0, 8),
-                      color: Color(0x14000000),
-                    ),
-                  ],
-                ),
-                child: Text(
-                  subtitle,
-                  style: const TextStyle(fontSize: 16, height: 1.5),
-                ),
-              ),
-              const SizedBox(height: 16),
-              Wrap(
-                spacing: 12,
-                runSpacing: 12,
-                children: actions,
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
   }
 }
 
@@ -935,7 +862,6 @@ class _AthleteHomeScreenState extends State<AthleteHomeScreen> {
   Widget build(BuildContext context) {
     final width = MediaQuery.of(context).size.width;
     final isDesktop = width >= 1100;
-    final isTablet = width >= 760 && width < 1100;
 
     final sections = <Widget>[
       _buildHeader(),
@@ -955,23 +881,13 @@ class _AthleteHomeScreenState extends State<AthleteHomeScreen> {
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Expanded(
-                child: Column(
-                  children: [sections[1], sections[3], sections[5]],
-                ),
-              ),
+              Expanded(child: Column(children: [sections[1], sections[3], sections[5]])),
               const SizedBox(width: 16),
-              Expanded(
-                child: Column(
-                  children: [sections[2], sections[4], sections[6]],
-                ),
-              ),
+              Expanded(child: Column(children: [sections[2], sections[4], sections[6]])),
             ],
           ),
         ],
       );
-    } else if (isTablet) {
-      content = Column(children: sections);
     } else {
       content = Column(children: sections);
     }
@@ -981,14 +897,8 @@ class _AthleteHomeScreenState extends State<AthleteHomeScreen> {
       appBar: AppBar(
         title: const Text('Home do Atleta'),
         actions: [
-          IconButton(
-            onPressed: _load,
-            icon: const Icon(Icons.refresh),
-          ),
-          TextButton(
-            onPressed: _logout,
-            child: const Text('Sair'),
-          ),
+          IconButton(onPressed: _load, icon: const Icon(Icons.refresh)),
+          TextButton(onPressed: _logout, child: const Text('Sair')),
         ],
       ),
       body: Column(
@@ -997,10 +907,7 @@ class _AthleteHomeScreenState extends State<AthleteHomeScreen> {
           if (_msg != null)
             Padding(
               padding: const EdgeInsets.all(12),
-              child: Text(
-                _msg!,
-                style: const TextStyle(color: Colors.red),
-              ),
+              child: Text(_msg!, style: const TextStyle(color: Colors.red)),
             ),
           Expanded(
             child: Center(
@@ -1035,49 +942,6 @@ class _AthleteHomeScreenState extends State<AthleteHomeScreen> {
         label: const Text('Marketplace'),
         icon: const Icon(Icons.search),
       ),
-    );
-  }
-}
-
-class ProfessionalHomeScreen extends StatelessWidget {
-  final String fullName;
-
-  const ProfessionalHomeScreen({super.key, required this.fullName});
-
-  @override
-  Widget build(BuildContext context) {
-    return BaseHomeScaffold(
-      title: 'Home do Profissional',
-      subtitle:
-          'Bem-vindo, $fullName.\n\nSeu ambiente profissional está focado em vínculo com atletas, criação manual de treinos, revisão e publicação.',
-      actions: [
-        SizedBox(
-          width: 260,
-          child: FilledButton(
-            onPressed: () {
-              Navigator.of(context).push(
-                MaterialPageRoute(
-                  builder: (_) => const CoachRequestsScreen(),
-                ),
-              );
-            },
-            child: const Text('Solicitações e atletas'),
-          ),
-        ),
-        SizedBox(
-          width: 260,
-          child: FilledButton.tonal(
-            onPressed: () {
-              Navigator.of(context).push(
-                MaterialPageRoute(
-                  builder: (_) => const CoachCreateWorkoutScreen(),
-                ),
-              );
-            },
-            child: const Text('Criar treino manual'),
-          ),
-        ),
-      ],
     );
   }
 }
