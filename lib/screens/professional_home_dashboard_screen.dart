@@ -4,6 +4,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'coach_athlete_summary_screen.dart';
 import 'coach_athlete_workouts_review_screen.dart';
 import 'coach_create_workout_screen.dart';
+import 'coach_requests_screen.dart';
 
 class ProfessionalHomeDashboardScreen extends StatefulWidget {
   final String fullName;
@@ -26,8 +27,8 @@ class _ProfessionalHomeDashboardScreenState
   String? _msg;
 
   List<Map<String, dynamic>> _activeRelations = [];
+  List<Map<String, dynamic>> _pendingRelations = [];
   Map<String, Map<String, dynamic>> _athleteProfiles = {};
-  Map<String, Map<String, dynamic>> _athleteSummaries = {};
   Map<String, List<Map<String, dynamic>>> _athleteWorkouts = {};
   Map<String, List<Map<String, dynamic>>> _athleteRaces = {};
   Map<String, List<Map<String, dynamic>>> _athleteInjuries = {};
@@ -39,63 +40,10 @@ class _ProfessionalHomeDashboardScreenState
   }
 
   String _s(dynamic v) => v == null ? '' : v.toString().trim();
-  num _n(dynamic v) => v is num ? v : 0;
 
   String _dateText(dynamic v) {
     final s = _s(v);
     return s.length >= 10 ? s.substring(0, 10) : s;
-  }
-
-  String _roleLabel(String raw) {
-    switch (raw) {
-      case 'running_coach':
-        return 'Treinador de Corrida';
-      case 'strength_coach':
-        return 'Preparador Físico';
-      case 'nutritionist':
-        return 'Nutricionista';
-      case 'physiotherapist':
-        return 'Fisioterapeuta';
-      case 'swim_coach':
-        return 'Treinador de Natação';
-      case 'triathlon_coach':
-        return 'Treinador de Triathlon';
-      case 'trail_coach':
-        return 'Treinador de Trail';
-      case 'doctor':
-        return 'Médico';
-      case 'coach':
-        return 'Coach';
-      default:
-        return raw.isEmpty ? 'Profissional' : raw;
-    }
-  }
-
-  String _activityLabel(String raw) {
-    final v = raw.toLowerCase();
-    if (v.contains('trail')) return 'Trail';
-    if (v.contains('run') || v.contains('corr')) return 'Corrida';
-    if (v.contains('swim') || v.contains('nata')) return 'Natação';
-    if (v.contains('bike') || v.contains('cicl')) return 'Ciclismo';
-    if (v.contains('strength') || v.contains('forca')) return 'Força';
-    if (v.contains('triathlon')) return 'Triathlon';
-    if (v.contains('swimrun')) return 'Swimrun';
-    return raw.isEmpty ? 'Geral' : raw;
-  }
-
-  String _feedbackLabel(String raw) {
-    switch (raw) {
-      case 'weak':
-        return 'Fraco';
-      case 'normal':
-        return 'Normal';
-      case 'strong':
-        return 'Forte';
-      case 'very_strong':
-        return 'Muito Forte';
-      default:
-        return raw;
-    }
   }
 
   Future<void> _load() async {
@@ -114,14 +62,16 @@ class _ProfessionalHomeDashboardScreenState
     });
 
     try {
-      final links = await _client
+      final allLinks = await _client
           .from('v_athlete_professional_links')
           .select()
           .eq('professional_id', user.id)
-          .eq('status', 'active')
           .order('created_at', ascending: false);
 
-      _activeRelations = (links as List).cast<Map<String, dynamic>>();
+      final all = (allLinks as List).cast<Map<String, dynamic>>();
+      _activeRelations = all.where((e) => _s(e['status']) == 'active').toList();
+      _pendingRelations =
+          all.where((e) => _s(e['status']) == 'pending').toList();
 
       final athleteIds = _activeRelations
           .map((e) => _s(e['athlete_id']))
@@ -130,7 +80,6 @@ class _ProfessionalHomeDashboardScreenState
           .toList();
 
       _athleteProfiles = {};
-      _athleteSummaries = {};
       _athleteWorkouts = {};
       _athleteRaces = {};
       _athleteInjuries = {};
@@ -146,16 +95,6 @@ class _ProfessionalHomeDashboardScreenState
         for (final row in (profilesRes as List).cast<Map<String, dynamic>>()) {
           final id = _s(row['id']);
           if (id.isNotEmpty) _athleteProfiles[id] = row;
-        }
-
-        final summariesRes = await _client
-            .from('v_athlete_global_summary')
-            .select()
-            .filter('athlete_id', 'in', quotedIds);
-
-        for (final row in (summariesRes as List).cast<Map<String, dynamic>>()) {
-          final id = _s(row['athlete_id']);
-          if (id.isNotEmpty) _athleteSummaries[id] = row;
         }
 
         final workoutsRes = await _client
@@ -201,112 +140,170 @@ class _ProfessionalHomeDashboardScreenState
     }
   }
 
-  Map<String, dynamic> _summaryCards() {
-    int activeAthletes = _activeRelations.length;
-    int upcomingRaces = 0;
-    int weakFeedbacks = 0;
-    int activeRestrictions = 0;
+  String _feedbackLabel(String raw) {
+    switch (raw) {
+      case 'weak':
+        return 'Fraco';
+      case 'normal':
+        return 'Normal';
+      case 'strong':
+        return 'Forte';
+      case 'very_strong':
+        return 'Muito Forte';
+      default:
+        return raw.isEmpty ? '-' : raw;
+    }
+  }
+
+  String _priorityLabel(String athleteId) {
+    final workouts = _athleteWorkouts[athleteId] ?? [];
+    final injuries = _athleteInjuries[athleteId] ?? [];
+    final races = _athleteRaces[athleteId] ?? [];
+
+    final hasWeakFeedback = workouts.any((w) => _s(w['athlete_feedback']) == 'weak');
+    final hasActiveInjury = injuries.any((i) {
+      final status = _s(i['status']);
+      return status == 'active' || status == 'monitoring';
+    });
 
     final now = DateTime.now();
+    final hasUpcomingRaceSoon = races.any((r) {
+      final d = DateTime.tryParse(_s(r['race_date']));
+      if (d == null) return false;
+      final diff = d.difference(DateTime(now.year, now.month, now.day)).inDays;
+      return diff >= 0 && diff <= 21;
+    });
 
-    for (final entry in _athleteRaces.entries) {
-      for (final race in entry.value) {
-        final date = DateTime.tryParse(_s(race['race_date']));
-        if (date != null && !date.isBefore(DateTime(now.year, now.month, now.day))) {
-          upcomingRaces++;
-        }
-      }
+    final completedCount =
+        workouts.where((w) => _s(w['status']) == 'completed').length;
+    final publishedCount = workouts.where((w) {
+      final status = _s(w['status']);
+      final validationStatus = _s(w['validation_status']);
+      return status == 'published' || validationStatus == 'published';
+    }).length;
+
+    final lowExecutionRisk =
+        publishedCount >= 3 && completedCount <= (publishedCount / 2).floor();
+
+    if (hasWeakFeedback || (hasUpcomingRaceSoon && hasActiveInjury) || lowExecutionRisk) {
+      return 'Perigo';
     }
-
-    for (final entry in _athleteWorkouts.entries) {
-      for (final w in entry.value) {
-        final feedback = _s(w['athlete_feedback']);
-        if (feedback == 'weak') weakFeedbacks++;
-      }
+    if (hasActiveInjury || hasUpcomingRaceSoon) {
+      return 'Atenção';
     }
+    return 'OK';
+  }
 
-    for (final entry in _athleteInjuries.entries) {
-      for (final injury in entry.value) {
-        final status = _s(injury['status']);
-        if (status == 'active' || status == 'monitoring') {
-          activeRestrictions++;
-        }
+  Color _priorityColor(String label) {
+    switch (label) {
+      case 'Perigo':
+        return Colors.red;
+      case 'Atenção':
+        return Colors.orange;
+      default:
+        return Colors.green;
+    }
+  }
+
+  String _latestFeedback(String athleteId) {
+    final workouts = _athleteWorkouts[athleteId] ?? [];
+    final withFeedback = workouts.where((w) => _s(w['athlete_feedback']).isNotEmpty).toList();
+    if (withFeedback.isEmpty) return '-';
+    withFeedback.sort(
+      (a, b) => _dateText(b['scheduled_date']).compareTo(_dateText(a['scheduled_date'])),
+    );
+    return _feedbackLabel(_s(withFeedback.first['athlete_feedback']));
+  }
+
+  String _nextRace(String athleteId) {
+    final races = _athleteRaces[athleteId] ?? [];
+    final now = DateTime.now();
+    final future = races.where((r) {
+      final d = DateTime.tryParse(_s(r['race_date']));
+      if (d == null) return false;
+      return !d.isBefore(DateTime(now.year, now.month, now.day));
+    }).toList();
+
+    if (future.isEmpty) return '-';
+    future.sort((a, b) => _s(a['race_date']).compareTo(_s(b['race_date'])));
+    return '${_s(future.first['name']).isEmpty ? 'Prova' : _s(future.first['name'])} • ${_dateText(future.first['race_date'])}';
+  }
+
+  String _restrictionsSummary(String athleteId) {
+    final items = _athleteInjuries[athleteId] ?? [];
+    final active = items.where((i) {
+      final status = _s(i['status']);
+      return status == 'active' || status == 'monitoring';
+    }).toList();
+
+    if (active.isEmpty) return '-';
+    final first = active.first;
+    final title = _s(first['title']).isEmpty ? 'Restrição' : _s(first['title']);
+    final region = _s(first['body_region']);
+    return region.isEmpty ? title : '$title • $region';
+  }
+
+  Map<String, dynamic> _summaryCards() {
+    int activeAthletes = _activeRelations.length;
+    int pendingRequests = _pendingRelations.length;
+    int danger = 0;
+    int attention = 0;
+
+    for (final relation in _activeRelations) {
+      final athleteId = _s(relation['athlete_id']);
+      final priority = _priorityLabel(athleteId);
+      if (priority == 'Perigo') {
+        danger++;
+      } else if (priority == 'Atenção') {
+        attention++;
       }
     }
 
     return {
       'active_athletes': activeAthletes,
-      'upcoming_races': upcomingRaces,
-      'weak_feedbacks': weakFeedbacks,
-      'active_restrictions': activeRestrictions,
+      'pending_requests': pendingRequests,
+      'danger': danger,
+      'attention': attention,
     };
   }
 
-  List<Map<String, dynamic>> _upcomingRacesFlat() {
-    final items = <Map<String, dynamic>>[];
-    for (final relation in _activeRelations) {
-      final athleteId = _s(relation['athlete_id']);
-      final athleteName =
-          _s(_athleteProfiles[athleteId]?['full_name']).isEmpty
-              ? 'Atleta'
-              : _s(_athleteProfiles[athleteId]?['full_name']);
-      for (final race in (_athleteRaces[athleteId] ?? [])) {
-        items.add({
-          'athlete_id': athleteId,
-          'athlete_name': athleteName,
-          ...race,
-        });
-      }
-    }
-
-    items.sort((a, b) => _s(a['race_date']).compareTo(_s(b['race_date'])));
-    return items.take(8).toList();
+  void _openAthleteSummary(String athleteId, String athleteName) {
+    Navigator.of(context)
+        .push(
+      MaterialPageRoute(
+        builder: (_) => CoachAthleteSummaryScreen(
+          athleteId: athleteId,
+          athleteName: athleteName,
+        ),
+      ),
+    )
+        .then((_) => _load());
   }
 
-  List<Map<String, dynamic>> _feedbacksFlat() {
-    final items = <Map<String, dynamic>>[];
-    for (final relation in _activeRelations) {
-      final athleteId = _s(relation['athlete_id']);
-      final athleteName =
-          _s(_athleteProfiles[athleteId]?['full_name']).isEmpty
-              ? 'Atleta'
-              : _s(_athleteProfiles[athleteId]?['full_name']);
-      for (final w in (_athleteWorkouts[athleteId] ?? [])) {
-        final feedback = _s(w['athlete_feedback']);
-        if (feedback.isNotEmpty) {
-          items.add({
-            'athlete_id': athleteId,
-            'athlete_name': athleteName,
-            ...w,
-          });
-        }
-      }
-    }
-
-    items.sort((a, b) => _dateText(b['scheduled_date']).compareTo(_dateText(a['scheduled_date'])));
-    return items.take(8).toList();
+  void _openCreateWorkout(String athleteId, String athleteName) {
+    Navigator.of(context)
+        .push(
+      MaterialPageRoute(
+        builder: (_) => CoachCreateWorkoutScreen(
+          initialAthleteId: athleteId,
+          initialAthleteName: athleteName,
+        ),
+      ),
+    )
+        .then((_) => _load());
   }
 
-  List<Map<String, dynamic>> _restrictionsFlat() {
-    final items = <Map<String, dynamic>>[];
-    for (final relation in _activeRelations) {
-      final athleteId = _s(relation['athlete_id']);
-      final athleteName =
-          _s(_athleteProfiles[athleteId]?['full_name']).isEmpty
-              ? 'Atleta'
-              : _s(_athleteProfiles[athleteId]?['full_name']);
-      for (final item in (_athleteInjuries[athleteId] ?? [])) {
-        final status = _s(item['status']);
-        if (status == 'active' || status == 'monitoring') {
-          items.add({
-            'athlete_id': athleteId,
-            'athlete_name': athleteName,
-            ...item,
-          });
-        }
-      }
-    }
-    return items.take(8).toList();
+  void _openWorkoutReview(String athleteId, String athleteName) {
+    Navigator.of(context)
+        .push(
+      MaterialPageRoute(
+        builder: (_) => CoachAthleteWorkoutsReviewScreen(
+          athleteId: athleteId,
+          athleteName: athleteName,
+        ),
+      ),
+    )
+        .then((_) => _load());
   }
 
   Widget _section({
@@ -354,7 +351,7 @@ class _ProfessionalHomeDashboardScreenState
 
   Widget _metricCard(String title, String value, IconData icon) {
     return Container(
-      width: 230,
+      width: 220,
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(16),
@@ -392,50 +389,21 @@ class _ProfessionalHomeDashboardScreenState
     );
   }
 
-  void _openAthleteSummary(String athleteId, String athleteName) {
-    Navigator.of(context)
-        .push(
-      MaterialPageRoute(
-        builder: (_) => CoachAthleteSummaryScreen(
-          athleteId: athleteId,
-          athleteName: athleteName,
-        ),
-      ),
-    )
-        .then((_) => _load());
-  }
-
-  void _openCreateWorkout(String athleteId, String athleteName) {
-    Navigator.of(context)
-        .push(
-      MaterialPageRoute(
-        builder: (_) => CoachCreateWorkoutScreen(
-          initialAthleteId: athleteId,
-          initialAthleteName: athleteName,
-        ),
-      ),
-    )
-        .then((_) => _load());
-  }
-
-  void _openWorkoutReview(String athleteId, String athleteName) {
-    Navigator.of(context)
-        .push(
-      MaterialPageRoute(
-        builder: (_) => CoachAthleteWorkoutsReviewScreen(
-          athleteId: athleteId,
-          athleteName: athleteName,
-        ),
-      ),
-    )
-        .then((_) => _load());
-  }
-
   Widget _buildHeader() {
     return _section(
       title: 'Bem-vindo, ${widget.fullName}',
+      actions: [
+        FilledButton(
+          onPressed: () {
+            Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const CoachRequestsScreen()),
+            );
+          },
+          child: const Text('Solicitações e atletas'),
+        ),
+      ],
       child: const Text(
-        'Acompanhe sua carteira de atletas, feedbacks, provas próximas e restrições relevantes em um único dashboard.',
+        'Faça a gestão geral do seu portfólio de atletas, priorizando quem precisa de acompanhamento imediato.',
       ),
     );
   }
@@ -449,353 +417,134 @@ class _ProfessionalHomeDashboardScreenState
         spacing: 12,
         runSpacing: 12,
         children: [
-          _metricCard(
-            'Atletas ativos',
-            '${s['active_athletes']}',
-            Icons.groups,
-          ),
-          _metricCard(
-            'Provas próximas',
-            '${s['upcoming_races']}',
-            Icons.flag,
-          ),
-          _metricCard(
-            'Feedbacks fracos',
-            '${s['weak_feedbacks']}',
-            Icons.warning_amber,
-          ),
-          _metricCard(
-            'Restrições ativas',
-            '${s['active_restrictions']}',
-            Icons.health_and_safety,
-          ),
+          _metricCard('Atletas ativos', '${s['active_athletes']}', Icons.groups),
+          _metricCard('Solicitações pendentes', '${s['pending_requests']}', Icons.mail_outline),
+          _metricCard('Em perigo', '${s['danger']}', Icons.warning_amber),
+          _metricCard('Em atenção', '${s['attention']}', Icons.visibility),
         ],
       ),
     );
   }
 
-  Widget _buildActiveAthletesSection() {
+  Widget _buildPortfolioSection() {
+    if (_activeRelations.isEmpty) {
+      return _section(
+        title: 'Gestão do portfólio',
+        child: const Text('Nenhum atleta ativo encontrado.'),
+      );
+    }
+
+    final sorted = List<Map<String, dynamic>>.from(_activeRelations)
+      ..sort((a, b) {
+        final ap = _priorityLabel(_s(a['athlete_id']));
+        final bp = _priorityLabel(_s(b['athlete_id']));
+        const weight = {'Perigo': 0, 'Atenção': 1, 'OK': 2};
+        final aw = weight[ap] ?? 99;
+        final bw = weight[bp] ?? 99;
+        if (aw != bw) return aw.compareTo(bw);
+
+        final an = _s(_athleteProfiles[_s(a['athlete_id'])]?['full_name']);
+        final bn = _s(_athleteProfiles[_s(b['athlete_id'])]?['full_name']);
+        return an.compareTo(bn);
+      });
+
     return _section(
-      title: 'Atletas ativos',
-      actions: [
-        FilledButton.tonal(
-          onPressed: _load,
-          child: const Text('Atualizar'),
-        ),
-      ],
-      child: _activeRelations.isEmpty
-          ? const Text('Nenhum atleta ativo encontrado.')
-          : Column(
-              children: _activeRelations.map((relation) {
-                final athleteId = _s(relation['athlete_id']);
-                final athleteName =
-                    _s(_athleteProfiles[athleteId]?['full_name']).isEmpty
-                        ? 'Atleta'
-                        : _s(_athleteProfiles[athleteId]?['full_name']);
-                final athleteEmail = _s(_athleteProfiles[athleteId]?['email']);
-                final avatar = _s(_athleteProfiles[athleteId]?['avatar_url']);
-                final role = _roleLabel(_s(relation['role_type']));
-                final workoutCount = (_athleteWorkouts[athleteId] ?? []).length;
-                final racesCount = (_athleteRaces[athleteId] ?? []).length;
-                final injuriesCount = (_athleteInjuries[athleteId] ?? []).length;
+      title: 'Gestão do portfólio',
+      child: Column(
+        children: sorted.map((relation) {
+          final athleteId = _s(relation['athlete_id']);
+          final athleteName =
+              _s(_athleteProfiles[athleteId]?['full_name']).isEmpty
+                  ? 'Atleta'
+                  : _s(_athleteProfiles[athleteId]?['full_name']);
+          final athleteEmail = _s(_athleteProfiles[athleteId]?['email']);
+          final priority = _priorityLabel(athleteId);
+          final priorityColor = _priorityColor(priority);
+          final feedback = _latestFeedback(athleteId);
+          final nextRace = _nextRace(athleteId);
+          final restriction = _restrictionsSummary(athleteId);
 
-                return Container(
-                  width: double.infinity,
-                  margin: const EdgeInsets.only(bottom: 10),
-                  padding: const EdgeInsets.all(14),
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(12),
-                    color: const Color(0xFFF7F7F9),
-                  ),
-                  child: Column(
-                    children: [
-                      Row(
-                        children: [
-                          CircleAvatar(
-                            backgroundImage:
-                                avatar.isNotEmpty ? NetworkImage(avatar) : null,
-                            child: avatar.isEmpty ? const Icon(Icons.person) : null,
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  athleteName,
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                                ),
-                                Text(role),
-                                if (athleteEmail.isNotEmpty) Text(athleteEmail),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 10),
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
-                        children: [
-                          _tinyChip('Treinos: $workoutCount'),
-                          _tinyChip('Provas: $racesCount'),
-                          _tinyChip('Restrições: $injuriesCount'),
-                        ],
-                      ),
-                      const SizedBox(height: 12),
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
-                        children: [
-                          FilledButton.tonal(
-                            onPressed: () =>
-                                _openAthleteSummary(athleteId, athleteName),
-                            child: const Text('Resumo'),
-                          ),
-                          FilledButton.tonal(
-                            onPressed: () =>
-                                _openCreateWorkout(athleteId, athleteName),
-                            child: const Text('Criar treino'),
-                          ),
-                          FilledButton(
-                            onPressed: () =>
-                                _openWorkoutReview(athleteId, athleteName),
-                            child: const Text('Ver treinos'),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                );
-              }).toList(),
+          return Container(
+            width: double.infinity,
+            margin: const EdgeInsets.only(bottom: 10),
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(12),
+              color: const Color(0xFFF7F7F9),
             ),
-    );
-  }
-
-  Widget _tinyChip(String text) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(20),
-        color: const Color(0xFFE9EDF5),
+            child: Column(
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      flex: 2,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            athleteName,
+                            style: const TextStyle(fontWeight: FontWeight.w700),
+                          ),
+                          if (athleteEmail.isNotEmpty) Text(athleteEmail),
+                        ],
+                      ),
+                    ),
+                    Expanded(
+                      child: Text('Feedback: $feedback'),
+                    ),
+                    Expanded(
+                      flex: 2,
+                      child: Text('Prova próxima: $nextRace'),
+                    ),
+                    Expanded(
+                      flex: 2,
+                      child: Text('Restrição/lesão: $restriction'),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(20),
+                        color: priorityColor.withValues(alpha: 0.12),
+                      ),
+                      child: Text(
+                        priority,
+                        style: TextStyle(
+                          color: priorityColor,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    FilledButton.tonal(
+                      onPressed: () => _openAthleteSummary(athleteId, athleteName),
+                      child: const Text('Resumo do atleta'),
+                    ),
+                    FilledButton.tonal(
+                      onPressed: () => _openCreateWorkout(athleteId, athleteName),
+                      child: const Text('Criar treino'),
+                    ),
+                    FilledButton(
+                      onPressed: () => _openWorkoutReview(athleteId, athleteName),
+                      child: const Text('Ver treinos'),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          );
+        }).toList(),
       ),
-      child: Text(text),
-    );
-  }
-
-  Widget _buildUpcomingRacesSection() {
-    final races = _upcomingRacesFlat();
-
-    return _section(
-      title: 'Provas próximas',
-      child: races.isEmpty
-          ? const Text('Nenhuma prova próxima encontrada.')
-          : Column(
-              children: races.map((race) {
-                final athleteId = _s(race['athlete_id']);
-                final athleteName = _s(race['athlete_name']);
-                final raceName =
-                    _s(race['name']).isEmpty ? 'Prova' : _s(race['name']);
-                final raceDate = _dateText(race['race_date']);
-                final activity = _activityLabel(_s(race['activity_type_id']));
-
-                return Container(
-                  width: double.infinity,
-                  margin: const EdgeInsets.only(bottom: 8),
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(12),
-                    color: const Color(0xFFF7F7F9),
-                  ),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              raceName,
-                              style: const TextStyle(fontWeight: FontWeight.w700),
-                            ),
-                            Text('Atleta: $athleteName'),
-                            Text('Data: $raceDate'),
-                            Text('Modalidade: $activity'),
-                          ],
-                        ),
-                      ),
-                      FilledButton.tonal(
-                        onPressed: () =>
-                            _openAthleteSummary(athleteId, athleteName),
-                        child: const Text('Abrir'),
-                      ),
-                    ],
-                  ),
-                );
-              }).toList(),
-            ),
-    );
-  }
-
-  Widget _buildFeedbacksSection() {
-    final feedbacks = _feedbacksFlat();
-
-    return _section(
-      title: 'Feedbacks recentes',
-      child: feedbacks.isEmpty
-          ? const Text('Nenhum feedback recente encontrado.')
-          : Column(
-              children: feedbacks.map((item) {
-                final athleteId = _s(item['athlete_id']);
-                final athleteName = _s(item['athlete_name']);
-                final title =
-                    _s(item['title']).isEmpty ? 'Treino' : _s(item['title']);
-                final feedback = _feedbackLabel(_s(item['athlete_feedback']));
-                final feedbackNotes = _s(item['athlete_feedback_notes']);
-                final date = _dateText(item['scheduled_date']);
-
-                return Container(
-                  width: double.infinity,
-                  margin: const EdgeInsets.only(bottom: 8),
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(12),
-                    color: const Color(0xFFF7F7F9),
-                  ),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              title,
-                              style: const TextStyle(fontWeight: FontWeight.w700),
-                            ),
-                            Text('Atleta: $athleteName'),
-                            Text('Data: $date'),
-                            Text('Feedback: $feedback'),
-                            if (feedbackNotes.isNotEmpty)
-                              Text('Obs: $feedbackNotes'),
-                          ],
-                        ),
-                      ),
-                      FilledButton.tonal(
-                        onPressed: () =>
-                            _openWorkoutReview(athleteId, athleteName),
-                        child: const Text('Ver'),
-                      ),
-                    ],
-                  ),
-                );
-              }).toList(),
-            ),
-    );
-  }
-
-  Widget _buildRestrictionsSection() {
-    final items = _restrictionsFlat();
-
-    return _section(
-      title: 'Restrições / lesões relevantes',
-      child: items.isEmpty
-          ? const Text('Nenhuma restrição relevante encontrada.')
-          : Column(
-              children: items.map((item) {
-                final athleteId = _s(item['athlete_id']);
-                final athleteName = _s(item['athlete_name']);
-                final title =
-                    _s(item['title']).isEmpty ? 'Registro' : _s(item['title']);
-                final region = _s(item['body_region']);
-                final status = _s(item['status']);
-
-                return Container(
-                  width: double.infinity,
-                  margin: const EdgeInsets.only(bottom: 8),
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(12),
-                    color: const Color(0xFFF7F7F9),
-                  ),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              title,
-                              style: const TextStyle(fontWeight: FontWeight.w700),
-                            ),
-                            Text('Atleta: $athleteName'),
-                            if (region.isNotEmpty) Text('Região: $region'),
-                            if (status.isNotEmpty) Text('Status: $status'),
-                          ],
-                        ),
-                      ),
-                      FilledButton.tonal(
-                        onPressed: () =>
-                            _openAthleteSummary(athleteId, athleteName),
-                        child: const Text('Abrir'),
-                      ),
-                    ],
-                  ),
-                );
-              }).toList(),
-            ),
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    final width = MediaQuery.of(context).size.width;
-    final isDesktop = width >= 1100;
-
-    Widget content;
-    if (isDesktop) {
-      content = Column(
-        children: [
-          _buildHeader(),
-          _buildSummaryCards(),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: Column(
-                  children: [
-                    _buildActiveAthletesSection(),
-                    _buildFeedbacksSection(),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: Column(
-                  children: [
-                    _buildUpcomingRacesSection(),
-                    _buildRestrictionsSection(),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ],
-      );
-    } else {
-      content = Column(
-        children: [
-          _buildHeader(),
-          _buildSummaryCards(),
-          _buildActiveAthletesSection(),
-          _buildUpcomingRacesSection(),
-          _buildFeedbacksSection(),
-          _buildRestrictionsSection(),
-        ],
-      );
-    }
-
     return Scaffold(
       backgroundColor: const Color(0xFFF4F6FA),
       appBar: AppBar(
@@ -821,15 +570,17 @@ class _ProfessionalHomeDashboardScreenState
           Expanded(
             child: Center(
               child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 1280),
+                constraints: const BoxConstraints(maxWidth: 1400),
                 child: ListView(
                   padding: const EdgeInsets.all(16),
                   children: [
-                    content,
+                    _buildHeader(),
+                    _buildSummaryCards(),
+                    _buildPortfolioSection(),
                     _section(
                       title: 'Próxima evolução do dashboard',
                       child: const Text(
-                        'Próximo passo: consolidar indicadores de carga, alertas automáticos, documentos/exames e visão por profissional/modalidade.',
+                        'Próximo passo: indicadores de carga, alertas automáticos, exames/documentos e score de risco por prova.',
                       ),
                     ),
                   ],

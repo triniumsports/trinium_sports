@@ -5,7 +5,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-import 'athlete_agenda_screen.dart';
+import 'home_router_screen.dart';
 import '../services/edge_functions_service.dart';
 
 class AthleteProfileFormScreen extends StatefulWidget {
@@ -33,16 +33,8 @@ class _AthleteProfileFormScreenState extends State<AthleteProfileFormScreen> {
 
   final TextEditingController _heightController = TextEditingController();
   final TextEditingController _weightController = TextEditingController();
-  final TextEditingController _restHrController = TextEditingController();
-  final TextEditingController _maxHrController = TextEditingController();
-  final TextEditingController _vo2Controller = TextEditingController();
 
-  String _fitnessLevel = 'intermediate';
   String? _avatarUrl;
-  final TextEditingController _bmrController =
-      TextEditingController(text: '1600');
-  final TextEditingController _phaseController =
-      TextEditingController(text: 'base');
 
   final TextEditingController _allergiesController = TextEditingController();
   final TextEditingController _intolerancesController = TextEditingController();
@@ -56,11 +48,6 @@ class _AthleteProfileFormScreenState extends State<AthleteProfileFormScreen> {
     _nameController.dispose();
     _heightController.dispose();
     _weightController.dispose();
-    _restHrController.dispose();
-    _maxHrController.dispose();
-    _vo2Controller.dispose();
-    _bmrController.dispose();
-    _phaseController.dispose();
     _allergiesController.dispose();
     _intolerancesController.dispose();
     _preferencesController.dispose();
@@ -75,8 +62,6 @@ class _AthleteProfileFormScreenState extends State<AthleteProfileFormScreen> {
     super.initState();
     _load();
   }
-
-  int? _toInt(String s) => int.tryParse(s.trim());
 
   double? _toDouble(String s) =>
       double.tryParse(s.trim().replaceAll(',', '.'));
@@ -115,18 +100,9 @@ class _AthleteProfileFormScreenState extends State<AthleteProfileFormScreen> {
 
       _gender = (athlete?['gender'] ?? _gender).toString();
       _experience = (athlete?['experience_level'] ?? _experience).toString();
-      _fitnessLevel =
-          (athlete?['fitness_level'] ?? _fitnessLevel).toString();
 
       _heightController.text = (athlete?['height_cm'] ?? '').toString();
       _weightController.text = (athlete?['weight_kg'] ?? '').toString();
-      _restHrController.text = (athlete?['resting_hr'] ?? '').toString();
-      _maxHrController.text = (athlete?['max_hr'] ?? '').toString();
-      _vo2Controller.text = (athlete?['vo2_max'] ?? '').toString();
-
-      _bmrController.text =
-          (athlete?['basal_metabolic_rate'] ?? 1600).toString();
-      _phaseController.text = (athlete?['phase'] ?? 'base').toString();
 
       final dietDetails = athlete?['dietary_restrictions_details'];
       if (dietDetails is Map) {
@@ -157,27 +133,6 @@ class _AthleteProfileFormScreenState extends State<AthleteProfileFormScreen> {
 
   String? _rangeDouble(String? v, String label, double min, double max) {
     if (v == null || v.trim().isEmpty) return '$label é obrigatório.';
-    final x = _toDouble(v);
-    if (x == null) return '$label inválido.';
-    if (x < min || x > max) return '$label fora do intervalo ($min–$max).';
-    return null;
-  }
-
-  String? _rangeInt(String? v, String label, int min, int max) {
-    if (v == null || v.trim().isEmpty) return '$label é obrigatório.';
-    final x = _toInt(v);
-    if (x == null) return '$label inválido.';
-    if (x < min || x > max) return '$label fora do intervalo ($min–$max).';
-    return null;
-  }
-
-  String? _optionalRangeDouble(
-    String? v,
-    String label,
-    double min,
-    double max,
-  ) {
-    if (v == null || v.trim().isEmpty) return null;
     final x = _toDouble(v);
     if (x == null) return '$label inválido.';
     if (x < min || x > max) return '$label fora do intervalo ($min–$max).';
@@ -253,17 +208,6 @@ class _AthleteProfileFormScreenState extends State<AthleteProfileFormScreen> {
 
     final height = _toDouble(_heightController.text)!;
     final weight = _toDouble(_weightController.text)!;
-    final rhr = _toInt(_restHrController.text)!;
-    final mhr = _toInt(_maxHrController.text)!;
-
-    if (rhr >= mhr) {
-      setState(() => _msg = 'FC repouso deve ser menor que FC máxima.');
-      return;
-    }
-
-    final vo2 = _vo2Controller.text.trim().isEmpty
-        ? null
-        : _toDouble(_vo2Controller.text);
 
     setState(() => _saving = true);
 
@@ -289,14 +233,6 @@ class _AthleteProfileFormScreenState extends State<AthleteProfileFormScreen> {
         'height_cm': height,
         'weight_kg': weight,
         'experience_level': _experience,
-        'resting_hr': rhr,
-        'max_hr': mhr,
-        'vo2_max': vo2,
-        'fitness_level': _fitnessLevel,
-        'basal_metabolic_rate': _toInt(_bmrController.text) ?? 1600,
-        'phase': _phaseController.text.trim().isEmpty
-            ? 'base'
-            : _phaseController.text.trim(),
         'dietary_restrictions_details': dietDetails,
         'dietary_restrictions': [
           _allergiesController.text.trim(),
@@ -310,8 +246,9 @@ class _AthleteProfileFormScreenState extends State<AthleteProfileFormScreen> {
       await _client.from('athlete_zones').upsert({'athlete_id': user.id});
 
       if (!mounted) return;
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (_) => const AthleteAgendaScreen()),
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(builder: (_) => const HomeRouterScreen()),
+        (route) => false,
       );
     } catch (e) {
       setState(() => _msg = 'Erro ao salvar: $e');
@@ -350,7 +287,7 @@ class _AthleteProfileFormScreenState extends State<AthleteProfileFormScreen> {
               child: ListView(
                 children: [
                   const Text(
-                    'Complete seus dados para personalizar treinos, métricas e acompanhamento.',
+                    'Complete seus dados principais. Campos fisiológicos serão alimentados futuramente por exames, treinador e integrações.',
                     textAlign: TextAlign.center,
                   ),
                   const SizedBox(height: 16),
@@ -440,70 +377,6 @@ class _AthleteProfileFormScreenState extends State<AthleteProfileFormScreen> {
                       border: OutlineInputBorder(),
                     ),
                     validator: (v) => _rangeDouble(v, 'Peso', 30, 220),
-                  ),
-                  const SizedBox(height: 12),
-                  TextFormField(
-                    controller: _restHrController,
-                    keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(
-                      labelText: 'FC repouso (obrigatório)',
-                      border: OutlineInputBorder(),
-                    ),
-                    validator: (v) => _rangeInt(v, 'FC repouso', 30, 120),
-                  ),
-                  const SizedBox(height: 12),
-                  TextFormField(
-                    controller: _maxHrController,
-                    keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(
-                      labelText: 'FC máxima (obrigatório)',
-                      border: OutlineInputBorder(),
-                    ),
-                    validator: (v) => _rangeInt(v, 'FC máxima', 120, 230),
-                  ),
-                  const SizedBox(height: 12),
-                  TextFormField(
-                    controller: _vo2Controller,
-                    keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(
-                      labelText: 'VO2max (opcional)',
-                      border: OutlineInputBorder(),
-                    ),
-                    validator: (v) =>
-                        _optionalRangeDouble(v, 'VO2max', 20, 90),
-                  ),
-                  const SizedBox(height: 12),
-                  DropdownButtonFormField<String>(
-                    initialValue: _fitnessLevel,
-                    decoration: const InputDecoration(
-                      labelText: 'Nível fitness',
-                      border: OutlineInputBorder(),
-                    ),
-                    items: const [
-                      DropdownMenuItem(value: 'beginner', child: Text('Iniciante')),
-                      DropdownMenuItem(value: 'intermediate', child: Text('Intermediário')),
-                      DropdownMenuItem(value: 'advanced', child: Text('Avançado')),
-                      DropdownMenuItem(value: 'elite', child: Text('Elite')),
-                    ],
-                    onChanged: (v) =>
-                        setState(() => _fitnessLevel = v ?? 'intermediate'),
-                  ),
-                  const SizedBox(height: 12),
-                  TextFormField(
-                    controller: _bmrController,
-                    keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(
-                      labelText: 'BMR (opcional)',
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  TextFormField(
-                    controller: _phaseController,
-                    decoration: const InputDecoration(
-                      labelText: 'Fase (opcional)',
-                      border: OutlineInputBorder(),
-                    ),
                   ),
                   const SizedBox(height: 18),
                   _sectionTitle('Restrições alimentares detalhadas'),
