@@ -5,13 +5,13 @@ import '../services/auth_service.dart';
 import 'admin_approvals_screen.dart';
 import 'athlete_approved_workouts_screen.dart';
 import 'athlete_injuries_restrictions_screen.dart';
+import 'athlete_medical_documents_screen.dart';
 import 'athlete_my_professionals_screen.dart';
 import 'athlete_profile_form_screen.dart';
 import 'athlete_search_professionals_screen.dart';
 import 'athlete_target_races_screen.dart';
 import 'athlete_weekly_availability_edit_screen.dart';
 import 'auth_gate.dart';
-import 'coach_requests_screen.dart';
 import 'professional_home_dashboard_screen.dart';
 import 'professional_profile_form_screen.dart';
 
@@ -72,9 +72,7 @@ class _HomeRouterScreenState extends State<HomeRouterScreen> {
 
     final athlete = await _client
         .from('athletes')
-        .select(
-          'birth_date, gender, height_cm, weight_kg, resting_hr, max_hr, experience_level',
-        )
+        .select('birth_date, gender, height_cm, weight_kg, experience_level')
         .eq('id', user.id)
         .maybeSingle();
 
@@ -89,8 +87,6 @@ class _HomeRouterScreenState extends State<HomeRouterScreen> {
 
     final height = athlete['height_cm'];
     final weight = athlete['weight_kg'];
-    final restingHr = athlete['resting_hr'];
-    final maxHr = athlete['max_hr'];
 
     final isComplete = birthDate.isNotEmpty &&
         gender.isNotEmpty &&
@@ -98,11 +94,7 @@ class _HomeRouterScreenState extends State<HomeRouterScreen> {
         height is num &&
         height > 0 &&
         weight is num &&
-        weight > 0 &&
-        restingHr is num &&
-        restingHr > 0 &&
-        maxHr is num &&
-        maxHr > 0;
+        weight > 0;
 
     _resolved = isComplete
         ? AthleteHomeScreen(fullName: fullName.isEmpty ? 'Atleta' : fullName)
@@ -206,6 +198,7 @@ class _AthleteHomeScreenState extends State<AthleteHomeScreen> {
   List<Map<String, dynamic>> _targetRaces = [];
   List<Map<String, dynamic>> _weeklyConstraints = [];
   List<Map<String, dynamic>> _injuries = [];
+  List<Map<String, dynamic>> _documents = [];
 
   @override
   void initState() {
@@ -270,6 +263,11 @@ class _AthleteHomeScreenState extends State<AthleteHomeScreen> {
             .select()
             .eq('athlete_id', user.id)
             .order('created_at', ascending: false),
+        _client
+            .from('athlete_medical_documents')
+            .select()
+            .eq('athlete_id', user.id)
+            .order('created_at', ascending: false),
       ]);
 
       _profile = results[0] == null ? null : Map<String, dynamic>.from(results[0] as Map);
@@ -279,6 +277,7 @@ class _AthleteHomeScreenState extends State<AthleteHomeScreen> {
       _targetRaces = (results[4] as List).cast<Map<String, dynamic>>();
       _weeklyConstraints = (results[5] as List).cast<Map<String, dynamic>>();
       _injuries = (results[6] as List).cast<Map<String, dynamic>>();
+      _documents = (results[7] as List).cast<Map<String, dynamic>>();
     } catch (e) {
       _msg = 'Erro ao carregar home do atleta: $e';
     } finally {
@@ -360,6 +359,33 @@ class _AthleteHomeScreenState extends State<AthleteHomeScreen> {
         return 'Forte';
       case 'very_strong':
         return 'Muito Forte';
+      default:
+        return raw;
+    }
+  }
+
+  String _docTypeLabel(String raw) {
+    switch (raw) {
+      case 'lab_exam':
+        return 'Exame laboratorial';
+      case 'cardiology_exam':
+        return 'Exame cardiológico';
+      case 'imaging_exam':
+        return 'Exame de imagem';
+      case 'medical_report':
+        return 'Laudo médico';
+      case 'sports_clearance':
+        return 'Liberação esportiva';
+      case 'body_composition':
+        return 'Composição corporal';
+      case 'prescription':
+        return 'Prescrição';
+      case 'nutrition_exam':
+        return 'Exame nutricional';
+      case 'physiotherapy_report':
+        return 'Relatório de fisioterapia';
+      case 'other':
+        return 'Outro';
       default:
         return raw;
     }
@@ -582,32 +608,6 @@ class _AthleteHomeScreenState extends State<AthleteHomeScreen> {
                   .map((e) => _tinyChip('${e.key}: ${e.value}'))
                   .toList(),
             ),
-          if (_workouts.isNotEmpty) ...[
-            const SizedBox(height: 14),
-            ..._workouts.take(4).map((w) {
-              final title = _s(w['title']).isEmpty ? 'Treino' : _s(w['title']);
-              final date = _dateText(w['scheduled_date']);
-              final feedback = _feedbackLabel(_s(w['athlete_feedback']));
-              return Container(
-                width: double.infinity,
-                margin: const EdgeInsets.only(bottom: 8),
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(12),
-                  color: const Color(0xFFF7F7F9),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(title, style: const TextStyle(fontWeight: FontWeight.w700)),
-                    Text('Data: $date'),
-                    Text('Atividade: ${_activityLabel(_s(w['activity_type_id']))}'),
-                    if (feedback.isNotEmpty) Text('Feedback: $feedback'),
-                  ],
-                ),
-              );
-            }),
-          ],
         ],
       ),
     );
@@ -849,6 +849,51 @@ class _AthleteHomeScreenState extends State<AthleteHomeScreen> {
     );
   }
 
+  Widget _buildDocumentsSection() {
+    return _section(
+      title: 'Exames e documentos',
+      actions: [
+        FilledButton.tonal(
+          onPressed: () async {
+            await Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => const AthleteMedicalDocumentsScreen(),
+              ),
+            );
+            await _load();
+          },
+          child: const Text('Gerenciar'),
+        ),
+      ],
+      child: _documents.isEmpty
+          ? const Text('Nenhum documento cadastrado.')
+          : Column(
+              children: _documents.take(5).map((doc) {
+                final title = _s(doc['title']).isEmpty ? 'Documento' : _s(doc['title']);
+                final type = _docTypeLabel(_s(doc['document_type']));
+                final date = _s(doc['exam_date']);
+                return Container(
+                  width: double.infinity,
+                  margin: const EdgeInsets.only(bottom: 8),
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(12),
+                    color: const Color(0xFFF7F7F9),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(title, style: const TextStyle(fontWeight: FontWeight.w700)),
+                      Text(type),
+                      if (date.isNotEmpty) Text('Data: $date'),
+                    ],
+                  ),
+                );
+              }).toList(),
+            ),
+    );
+  }
+
   Future<void> _logout() async {
     await Supabase.instance.client.auth.signOut();
     if (!mounted) return;
@@ -871,6 +916,7 @@ class _AthleteHomeScreenState extends State<AthleteHomeScreen> {
       _buildAvailabilitySection(),
       _buildDietSection(),
       _buildInjuriesSection(),
+      _buildDocumentsSection(),
     ];
 
     Widget content;
@@ -881,7 +927,7 @@ class _AthleteHomeScreenState extends State<AthleteHomeScreen> {
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Expanded(child: Column(children: [sections[1], sections[3], sections[5]])),
+              Expanded(child: Column(children: [sections[1], sections[3], sections[5], sections[7]])),
               const SizedBox(width: 16),
               Expanded(child: Column(children: [sections[2], sections[4], sections[6]])),
             ],
