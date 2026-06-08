@@ -199,6 +199,8 @@ class _AthleteHomeScreenState extends State<AthleteHomeScreen> {
   List<Map<String, dynamic>> _weeklyConstraints = [];
   List<Map<String, dynamic>> _injuries = [];
   List<Map<String, dynamic>> _documents = [];
+  List<Map<String, dynamic>> _weeklyLoad = [];
+  List<Map<String, dynamic>> _weeklyMuscleLoad = [];
 
   @override
   void initState() {
@@ -268,6 +270,16 @@ class _AthleteHomeScreenState extends State<AthleteHomeScreen> {
             .select()
             .eq('athlete_id', user.id)
             .order('created_at', ascending: false),
+        _client
+            .from('v_athlete_training_load_weekly')
+            .select()
+            .eq('athlete_id', user.id)
+            .order('week_start', ascending: false),
+        _client
+            .from('v_athlete_muscle_load_weekly')
+            .select()
+            .eq('athlete_id', user.id)
+            .order('week_start', ascending: false),
       ]);
 
       _profile = results[0] == null ? null : Map<String, dynamic>.from(results[0] as Map);
@@ -278,6 +290,8 @@ class _AthleteHomeScreenState extends State<AthleteHomeScreen> {
       _weeklyConstraints = (results[5] as List).cast<Map<String, dynamic>>();
       _injuries = (results[6] as List).cast<Map<String, dynamic>>();
       _documents = (results[7] as List).cast<Map<String, dynamic>>();
+      _weeklyLoad = (results[8] as List).cast<Map<String, dynamic>>();
+      _weeklyMuscleLoad = (results[9] as List).cast<Map<String, dynamic>>();
     } catch (e) {
       _msg = 'Erro ao carregar home do atleta: $e';
     } finally {
@@ -420,6 +434,33 @@ class _AthleteHomeScreenState extends State<AthleteHomeScreen> {
       'total': _workouts.length,
       'duration_sec': totalDurationSec,
       'by_activity': byActivity,
+    };
+  }
+
+  Map<String, dynamic> _weeklyLoadSummary() {
+    int plannedSessions = 0;
+    int executedSessions = 0;
+    int weakFeedback = 0;
+    num plannedDurationSec = 0;
+    num executedDurationSec = 0;
+
+    for (final row in _weeklyLoad) {
+      plannedSessions += _n(row['planned_sessions']).toInt();
+      executedSessions += _n(row['executed_sessions']).toInt();
+      weakFeedback += _n(row['weak_feedback_count']).toInt();
+      plannedDurationSec += _n(row['planned_duration_sec']);
+      executedDurationSec += _n(row['executed_duration_sec']);
+    }
+
+    final adherence = plannedSessions == 0 ? 0.0 : (executedSessions / plannedSessions) * 100;
+
+    return {
+      'planned_sessions': plannedSessions,
+      'executed_sessions': executedSessions,
+      'weak_feedback': weakFeedback,
+      'planned_duration_sec': plannedDurationSec,
+      'executed_duration_sec': executedDurationSec,
+      'adherence_pct': adherence,
     };
   }
 
@@ -894,6 +935,86 @@ class _AthleteHomeScreenState extends State<AthleteHomeScreen> {
     );
   }
 
+  Widget _buildPlannedExecutedSection() {
+    final s = _weeklyLoadSummary();
+
+    return _section(
+      title: 'Planned vs Executed',
+      child: Wrap(
+        spacing: 12,
+        runSpacing: 12,
+        children: [
+          _metricCard('Sessões planejadas', '${s['planned_sessions']}', Icons.event_note),
+          _metricCard('Sessões executadas', '${s['executed_sessions']}', Icons.done_all),
+          _metricCard('Aderência', '${(s['adherence_pct'] as double).toStringAsFixed(0)}%', Icons.percent),
+          _metricCard('Feedback fraco', '${s['weak_feedback']}', Icons.warning_amber),
+          _metricCard(
+            'Horas exec.',
+            '${(_n(s['executed_duration_sec']) / 3600).toStringAsFixed(1)}h',
+            Icons.timer,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMuscleLoadSection() {
+    if (_weeklyMuscleLoad.isEmpty) {
+      return _section(
+        title: 'Carga muscular estimada',
+        child: const Text('Sem dados de carga muscular.'),
+      );
+    }
+
+    final grouped = <String, List<Map<String, dynamic>>>{};
+    for (final row in _weeklyMuscleLoad) {
+      final week = _dateText(row['week_start']);
+      grouped.putIfAbsent(week, () => []);
+      grouped[week]!.add(row);
+    }
+
+    final weeks = grouped.keys.toList()..sort((a, b) => b.compareTo(a));
+
+    return _section(
+      title: 'Carga muscular estimada',
+      child: Column(
+        children: weeks.take(4).map((week) {
+          final rows = grouped[week]!
+            ..sort((a, b) => _n(b['total_load_points']).compareTo(_n(a['total_load_points'])));
+
+          return Container(
+            width: double.infinity,
+            margin: const EdgeInsets.only(bottom: 10),
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(12),
+              color: const Color(0xFFF7F7F9),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Semana de $week',
+                  style: const TextStyle(fontWeight: FontWeight.w700),
+                ),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: rows.take(10).map((row) {
+                    final muscle = _s(row['muscle_group_name']);
+                    final total = _n(row['total_load_points']).toStringAsFixed(1);
+                    return _tinyChip('$muscle: $total');
+                  }).toList(),
+                ),
+              ],
+            ),
+          );
+        }).toList(),
+      ),
+    );
+  }
+
   Future<void> _logout() async {
     await Supabase.instance.client.auth.signOut();
     if (!mounted) return;
@@ -917,6 +1038,8 @@ class _AthleteHomeScreenState extends State<AthleteHomeScreen> {
       _buildDietSection(),
       _buildInjuriesSection(),
       _buildDocumentsSection(),
+      _buildPlannedExecutedSection(),
+      _buildMuscleLoadSection(),
     ];
 
     Widget content;
@@ -927,9 +1050,9 @@ class _AthleteHomeScreenState extends State<AthleteHomeScreen> {
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Expanded(child: Column(children: [sections[1], sections[3], sections[5], sections[7]])),
+              Expanded(child: Column(children: [sections[1], sections[3], sections[5], sections[7], sections[8]])),
               const SizedBox(width: 16),
-              Expanded(child: Column(children: [sections[2], sections[4], sections[6]])),
+              Expanded(child: Column(children: [sections[2], sections[4], sections[6], sections[9]])),
             ],
           ),
         ],
