@@ -30,6 +30,7 @@ class _CoachAthleteSummaryScreenState extends State<CoachAthleteSummaryScreen> {
   List<Map<String, dynamic>> _weeklyConstraints = [];
   List<Map<String, dynamic>> _enduranceSteps = [];
   List<Map<String, dynamic>> _strengthExercises = [];
+  List<Map<String, dynamic>> _weeklyLoad = [];
 
   @override
   void initState() {
@@ -99,6 +100,12 @@ class _CoachAthleteSummaryScreenState extends State<CoachAthleteSummaryScreen> {
           .select()
           .eq('athlete_id', widget.athleteId);
 
+      final weeklyLoadRes = await _client
+          .from('v_athlete_training_load_weekly')
+          .select()
+          .eq('athlete_id', widget.athleteId)
+          .order('week_start', ascending: false);
+
       _summary = summaryRes == null
           ? null
           : Map<String, dynamic>.from(summaryRes as Map);
@@ -113,6 +120,7 @@ class _CoachAthleteSummaryScreenState extends State<CoachAthleteSummaryScreen> {
       _publishedWorkouts = (workoutsRes as List).cast<Map<String, dynamic>>();
       _targetRaces = (racesRes as List).cast<Map<String, dynamic>>();
       _weeklyConstraints = (weeklyRes as List).cast<Map<String, dynamic>>();
+      _weeklyLoad = (weeklyLoadRes as List).cast<Map<String, dynamic>>();
 
       final workoutIds = _publishedWorkouts
           .map((e) => e['id'])
@@ -182,6 +190,7 @@ class _CoachAthleteSummaryScreenState extends State<CoachAthleteSummaryScreen> {
     if (v.contains('bike') || v.contains('cicl')) return 'Ciclismo';
     if (v.contains('strength') || v.contains('forca')) return 'Força';
     if (v.contains('triathlon')) return 'Triathlon';
+    if (v.contains('swimrun')) return 'Swimrun';
     if (v.contains('rest')) return 'Descanso';
     return raw.isEmpty ? 'Geral' : raw;
   }
@@ -215,17 +224,6 @@ class _CoachAthleteSummaryScreenState extends State<CoachAthleteSummaryScreen> {
     }
   }
 
-  DateTime? _parseDate(dynamic value) {
-    final s = _s(value);
-    if (s.isEmpty) return null;
-    return DateTime.tryParse(s);
-  }
-
-  DateTime _weekStart(DateTime date) {
-    final only = DateTime(date.year, date.month, date.day);
-    return only.subtract(Duration(days: only.weekday - 1));
-  }
-
   Map<String, dynamic> _loadDashboard() {
     int totalPublished = _publishedWorkouts.length;
     int totalCompleted = 0;
@@ -253,22 +251,21 @@ class _CoachAthleteSummaryScreenState extends State<CoachAthleteSummaryScreen> {
       final duration = _n(w['planned_duration_sec']);
       totalDurationSec += duration;
 
-      final date = _parseDate(w['scheduled_date']);
-      if (date != null) {
-        final weekKey = _weekStart(date).toIso8601String().substring(0, 10);
-        byWeek.putIfAbsent(weekKey, () => {
+      final date = _dateText(w['scheduled_date']);
+      if (date.isNotEmpty) {
+        byWeek.putIfAbsent(date, () => {
               'hours_sec': 0,
               'distance_m': 0,
               'sessions': 0,
             });
-        byWeek[weekKey]!['hours_sec'] =
-            (byWeek[weekKey]!['hours_sec'] ?? 0) + duration;
-        byWeek[weekKey]!['sessions'] =
-            (byWeek[weekKey]!['sessions'] ?? 0) + 1;
+        byWeek[date]!['hours_sec'] =
+            (byWeek[date]!['hours_sec'] ?? 0) + duration;
+        byWeek[date]!['sessions'] =
+            (byWeek[date]!['sessions'] ?? 0) + 1;
 
-        byWeekActivity.putIfAbsent(weekKey, () => {});
-        byWeekActivity[weekKey]![activity] =
-            (byWeekActivity[weekKey]![activity] ?? 0) + 1;
+        byWeekActivity.putIfAbsent(date, () => {});
+        byWeekActivity[date]![activity] =
+            (byWeekActivity[date]![activity] ?? 0) + 1;
       }
     }
 
@@ -279,23 +276,7 @@ class _CoachAthleteSummaryScreenState extends State<CoachAthleteSummaryScreen> {
         final unit = _s(step['duration_unit']).toLowerCase();
         num meters = rawValue;
         if (unit == 'km') meters = rawValue * 1000;
-
         totalDistanceMeters += meters;
-
-        final workoutId = step['prescribed_workout_id'];
-        if (workoutId is int && workoutMap.containsKey(workoutId)) {
-          final date = _parseDate(workoutMap[workoutId]!['scheduled_date']);
-          if (date != null) {
-            final weekKey = _weekStart(date).toIso8601String().substring(0, 10);
-            byWeek.putIfAbsent(weekKey, () => {
-                  'hours_sec': 0,
-                  'distance_m': 0,
-                  'sessions': 0,
-                });
-            byWeek[weekKey]!['distance_m'] =
-                (byWeek[weekKey]!['distance_m'] ?? 0) + meters;
-          }
-        }
       }
     }
 
@@ -318,6 +299,38 @@ class _CoachAthleteSummaryScreenState extends State<CoachAthleteSummaryScreen> {
       'by_muscle_group': byMuscleGroup,
       'by_week': weekEntries,
       'by_week_activity': byWeekActivity,
+    };
+  }
+
+  Map<String, dynamic> _weeklyLoadSummary() {
+    int plannedSessions = 0;
+    int executedSessions = 0;
+    num plannedDurationSec = 0;
+    num executedDurationSec = 0;
+    int weakFeedback = 0;
+    int strengthExercises = 0;
+
+    for (final row in _weeklyLoad) {
+      plannedSessions += _n(row['planned_sessions']).toInt();
+      executedSessions += _n(row['executed_sessions']).toInt();
+      plannedDurationSec += _n(row['planned_duration_sec']);
+      executedDurationSec += _n(row['executed_duration_sec']);
+      weakFeedback += _n(row['weak_feedback_count']).toInt();
+      strengthExercises += _n(row['strength_exercises_count']).toInt();
+    }
+
+    final adherence = plannedSessions == 0
+        ? 0.0
+        : (executedSessions / plannedSessions) * 100;
+
+    return {
+      'planned_sessions': plannedSessions,
+      'executed_sessions': executedSessions,
+      'planned_duration_sec': plannedDurationSec,
+      'executed_duration_sec': executedDurationSec,
+      'weak_feedback': weakFeedback,
+      'strength_exercises': strengthExercises,
+      'adherence_pct': adherence,
     };
   }
 
@@ -935,6 +948,141 @@ class _CoachAthleteSummaryScreenState extends State<CoachAthleteSummaryScreen> {
     );
   }
 
+  Widget _buildWeeklyLoadSection() {
+    final summary = _weeklyLoadSummary();
+
+    final grouped = <String, List<Map<String, dynamic>>>{};
+    for (final row in _weeklyLoad) {
+      final week = _dateText(row['week_start']);
+      grouped.putIfAbsent(week, () => []);
+      grouped[week]!.add(row);
+    }
+
+    final orderedWeeks = grouped.keys.toList()..sort((a, b) => b.compareTo(a));
+
+    return _sectionContainer(
+      title: 'Planned vs Executed',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Wrap(
+            spacing: 12,
+            runSpacing: 12,
+            children: [
+              _metricCard(
+                title: 'Sessões planejadas',
+                value: '${summary['planned_sessions']}',
+                icon: Icons.event_note,
+              ),
+              _metricCard(
+                title: 'Sessões executadas',
+                value: '${summary['executed_sessions']}',
+                icon: Icons.done_all,
+              ),
+              _metricCard(
+                title: 'Aderência',
+                value: '${(summary['adherence_pct'] as double).toStringAsFixed(0)}%',
+                icon: Icons.percent,
+              ),
+              _metricCard(
+                title: 'Feedback fraco',
+                value: '${summary['weak_feedback']}',
+                icon: Icons.warning_amber,
+              ),
+              _metricCard(
+                title: 'Exercícios força',
+                value: '${summary['strength_exercises']}',
+                icon: Icons.fitness_center,
+              ),
+            ],
+          ),
+          const SizedBox(height: 18),
+          if (orderedWeeks.isEmpty)
+            const Text('Sem dados de carga semanal.')
+          else
+            Column(
+              children: orderedWeeks.take(8).map((week) {
+                final rows = grouped[week]!;
+                int plannedSessions = 0;
+                int executedSessions = 0;
+                num plannedDurationSec = 0;
+                num executedDurationSec = 0;
+                int weakFeedback = 0;
+                int strengthExercises = 0;
+
+                for (final row in rows) {
+                  plannedSessions += _n(row['planned_sessions']).toInt();
+                  executedSessions += _n(row['executed_sessions']).toInt();
+                  plannedDurationSec += _n(row['planned_duration_sec']);
+                  executedDurationSec += _n(row['executed_duration_sec']);
+                  weakFeedback += _n(row['weak_feedback_count']).toInt();
+                  strengthExercises += _n(row['strength_exercises_count']).toInt();
+                }
+
+                final adherence = plannedSessions == 0
+                    ? 0.0
+                    : (executedSessions / plannedSessions) * 100;
+
+                return Container(
+                  width: double.infinity,
+                  margin: const EdgeInsets.only(bottom: 10),
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(12),
+                    color: const Color(0xFFF7F7F9),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Semana de $week',
+                        style: const TextStyle(fontWeight: FontWeight.w700),
+                      ),
+                      const SizedBox(height: 8),
+                      Wrap(
+                        spacing: 12,
+                        runSpacing: 8,
+                        children: [
+                          Text('Planejado: $plannedSessions sessões'),
+                          Text('Executado: $executedSessions sessões'),
+                          Text('Aderência: ${adherence.toStringAsFixed(0)}%'),
+                          Text('Horas plan.: ${(plannedDurationSec / 3600).toStringAsFixed(1)}h'),
+                          Text('Horas exec.: ${(executedDurationSec / 3600).toStringAsFixed(1)}h'),
+                          Text('Feedback fraco: $weakFeedback'),
+                          Text('Força: $strengthExercises exercícios'),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: rows.map((row) {
+                          final activity = _activityLabel(_s(row['activity_type_id']));
+                          final planned = _n(row['planned_sessions']).toInt();
+                          final executed = _n(row['executed_sessions']).toInt();
+                          return Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 6,
+                            ),
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(20),
+                              color: const Color(0xFFE9EDF5),
+                            ),
+                            child: Text('$activity: $executed/$planned'),
+                          );
+                        }).toList(),
+                      ),
+                    ],
+                  ),
+                );
+              }).toList(),
+            ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -969,6 +1117,7 @@ class _CoachAthleteSummaryScreenState extends State<CoachAthleteSummaryScreen> {
                 _buildWeeklyAvailabilitySection(),
                 _buildCareTeamSection(),
                 _buildInjuriesSection(),
+                _buildWeeklyLoadSection(),
                 _buildDashboardSection(),
               ],
             ),

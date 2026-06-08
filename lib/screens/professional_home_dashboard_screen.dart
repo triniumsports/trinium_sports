@@ -32,6 +32,7 @@ class _ProfessionalHomeDashboardScreenState
   Map<String, List<Map<String, dynamic>>> _athleteWorkouts = {};
   Map<String, List<Map<String, dynamic>>> _athleteRaces = {};
   Map<String, List<Map<String, dynamic>>> _athleteInjuries = {};
+  Map<String, List<Map<String, dynamic>>> _athleteWeeklyLoad = {};
 
   @override
   void initState() {
@@ -40,6 +41,7 @@ class _ProfessionalHomeDashboardScreenState
   }
 
   String _s(dynamic v) => v == null ? '' : v.toString().trim();
+  num _n(dynamic v) => v is num ? v : 0;
 
   String _dateText(dynamic v) {
     final s = _s(v);
@@ -83,6 +85,7 @@ class _ProfessionalHomeDashboardScreenState
       _athleteWorkouts = {};
       _athleteRaces = {};
       _athleteInjuries = {};
+      _athleteWeeklyLoad = {};
 
       if (athleteIds.isNotEmpty) {
         final quotedIds = '(${athleteIds.map((e) => '"$e"').join(',')})';
@@ -132,6 +135,18 @@ class _ProfessionalHomeDashboardScreenState
           _athleteInjuries.putIfAbsent(athleteId, () => []);
           _athleteInjuries[athleteId]!.add(row);
         }
+
+        final weeklyLoadRes = await _client
+            .from('v_athlete_training_load_weekly')
+            .select()
+            .filter('athlete_id', 'in', quotedIds)
+            .order('week_start', ascending: false);
+
+        for (final row in (weeklyLoadRes as List).cast<Map<String, dynamic>>()) {
+          final athleteId = _s(row['athlete_id']);
+          _athleteWeeklyLoad.putIfAbsent(athleteId, () => []);
+          _athleteWeeklyLoad[athleteId]!.add(row);
+        }
       }
     } catch (e) {
       _msg = 'Erro ao carregar home do profissional: $e';
@@ -155,12 +170,40 @@ class _ProfessionalHomeDashboardScreenState
     }
   }
 
+  Map<String, dynamic> _loadSummaryForAthlete(String athleteId) {
+    final rows = _athleteWeeklyLoad[athleteId] ?? [];
+    int planned = 0;
+    int executed = 0;
+    int weak = 0;
+    num plannedSec = 0;
+    num executedSec = 0;
+
+    for (final row in rows) {
+      planned += _n(row['planned_sessions']).toInt();
+      executed += _n(row['executed_sessions']).toInt();
+      weak += _n(row['weak_feedback_count']).toInt();
+      plannedSec += _n(row['planned_duration_sec']);
+      executedSec += _n(row['executed_duration_sec']);
+    }
+
+    final adherence = planned == 0 ? 0.0 : (executed / planned) * 100;
+
+    return {
+      'planned_sessions': planned,
+      'executed_sessions': executed,
+      'weak_feedback': weak,
+      'planned_duration_sec': plannedSec,
+      'executed_duration_sec': executedSec,
+      'adherence_pct': adherence,
+    };
+  }
+
   String _priorityLabel(String athleteId) {
-    final workouts = _athleteWorkouts[athleteId] ?? [];
+    final load = _loadSummaryForAthlete(athleteId);
     final injuries = _athleteInjuries[athleteId] ?? [];
     final races = _athleteRaces[athleteId] ?? [];
 
-    final hasWeakFeedback = workouts.any((w) => _s(w['athlete_feedback']) == 'weak');
+    final hasWeakFeedback = (load['weak_feedback'] as int) > 0;
     final hasActiveInjury = injuries.any((i) {
       final status = _s(i['status']);
       return status == 'active' || status == 'monitoring';
@@ -174,21 +217,12 @@ class _ProfessionalHomeDashboardScreenState
       return diff >= 0 && diff <= 21;
     });
 
-    final completedCount =
-        workouts.where((w) => _s(w['status']) == 'completed').length;
-    final publishedCount = workouts.where((w) {
-      final status = _s(w['status']);
-      final validationStatus = _s(w['validation_status']);
-      return status == 'published' || validationStatus == 'published';
-    }).length;
+    final adherence = load['adherence_pct'] as double;
 
-    final lowExecutionRisk =
-        publishedCount >= 3 && completedCount <= (publishedCount / 2).floor();
-
-    if (hasWeakFeedback || (hasUpcomingRaceSoon && hasActiveInjury) || lowExecutionRisk) {
+    if (hasWeakFeedback || (hasUpcomingRaceSoon && hasActiveInjury) || adherence < 50) {
       return 'Perigo';
     }
-    if (hasActiveInjury || hasUpcomingRaceSoon) {
+    if (hasActiveInjury || hasUpcomingRaceSoon || adherence < 80) {
       return 'Atenção';
     }
     return 'OK';
@@ -463,6 +497,10 @@ class _ProfessionalHomeDashboardScreenState
           final feedback = _latestFeedback(athleteId);
           final nextRace = _nextRace(athleteId);
           final restriction = _restrictionsSummary(athleteId);
+          final load = _loadSummaryForAthlete(athleteId);
+          final planned = load['planned_sessions'] as int;
+          final executed = load['executed_sessions'] as int;
+          final adherence = load['adherence_pct'] as double;
 
           return Container(
             width: double.infinity,
@@ -489,17 +527,9 @@ class _ProfessionalHomeDashboardScreenState
                         ],
                       ),
                     ),
-                    Expanded(
-                      child: Text('Feedback: $feedback'),
-                    ),
-                    Expanded(
-                      flex: 2,
-                      child: Text('Prova próxima: $nextRace'),
-                    ),
-                    Expanded(
-                      flex: 2,
-                      child: Text('Restrição/lesão: $restriction'),
-                    ),
+                    Expanded(child: Text('Feedback: $feedback')),
+                    Expanded(flex: 2, child: Text('Prova próxima: $nextRace')),
+                    Expanded(flex: 2, child: Text('Restrição/lesão: $restriction')),
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                       decoration: BoxDecoration(
@@ -514,6 +544,19 @@ class _ProfessionalHomeDashboardScreenState
                         ),
                       ),
                     ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Wrap(
+                  spacing: 10,
+                  runSpacing: 8,
+                  children: [
+                    Text('Planejado: $planned'),
+                    Text('Executado: $executed'),
+                    Text('Aderência: ${adherence.toStringAsFixed(0)}%'),
+                    Text('Horas plan.: ${(_n(load['planned_duration_sec']) / 3600).toStringAsFixed(1)}h'),
+                    Text('Horas exec.: ${(_n(load['executed_duration_sec']) / 3600).toStringAsFixed(1)}h'),
+                    Text('Feedback fraco: ${load['weak_feedback']}'),
                   ],
                 ),
                 const SizedBox(height: 12),
@@ -580,7 +623,7 @@ class _ProfessionalHomeDashboardScreenState
                     _section(
                       title: 'Próxima evolução do dashboard',
                       child: const Text(
-                        'Próximo passo: indicadores de carga, alertas automáticos, exames/documentos e score de risco por prova.',
+                        'Próximo passo: indicadores musculares, alertas automáticos, exames/documentos e score de risco por prova.',
                       ),
                     ),
                   ],
