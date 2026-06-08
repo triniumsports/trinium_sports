@@ -31,6 +31,7 @@ class _CoachAthleteSummaryScreenState extends State<CoachAthleteSummaryScreen> {
   List<Map<String, dynamic>> _enduranceSteps = [];
   List<Map<String, dynamic>> _strengthExercises = [];
   List<Map<String, dynamic>> _weeklyLoad = [];
+  List<Map<String, dynamic>> _weeklyMuscleLoad = [];
 
   @override
   void initState() {
@@ -106,6 +107,12 @@ class _CoachAthleteSummaryScreenState extends State<CoachAthleteSummaryScreen> {
           .eq('athlete_id', widget.athleteId)
           .order('week_start', ascending: false);
 
+      final weeklyMuscleLoadRes = await _client
+          .from('v_athlete_muscle_load_weekly')
+          .select()
+          .eq('athlete_id', widget.athleteId)
+          .order('week_start', ascending: false);
+
       _summary = summaryRes == null
           ? null
           : Map<String, dynamic>.from(summaryRes as Map);
@@ -121,6 +128,8 @@ class _CoachAthleteSummaryScreenState extends State<CoachAthleteSummaryScreen> {
       _targetRaces = (racesRes as List).cast<Map<String, dynamic>>();
       _weeklyConstraints = (weeklyRes as List).cast<Map<String, dynamic>>();
       _weeklyLoad = (weeklyLoadRes as List).cast<Map<String, dynamic>>();
+      _weeklyMuscleLoad =
+          (weeklyMuscleLoadRes as List).cast<Map<String, dynamic>>();
 
       final workoutIds = _publishedWorkouts
           .map((e) => e['id'])
@@ -235,13 +244,7 @@ class _CoachAthleteSummaryScreenState extends State<CoachAthleteSummaryScreen> {
     final Map<String, Map<String, num>> byWeek = {};
     final Map<String, Map<String, int>> byWeekActivity = {};
 
-    final workoutMap = <int, Map<String, dynamic>>{};
     for (final w in _publishedWorkouts) {
-      final id = w['id'];
-      if (id is int) {
-        workoutMap[id] = w;
-      }
-
       final activity = _activityLabel(_s(w['activity_type_id']));
       byActivitySessions[activity] = (byActivitySessions[activity] ?? 0) + 1;
 
@@ -1083,6 +1086,74 @@ class _CoachAthleteSummaryScreenState extends State<CoachAthleteSummaryScreen> {
     );
   }
 
+  Widget _buildMuscleLoadSection() {
+    final grouped = <String, List<Map<String, dynamic>>>{};
+    for (final row in _weeklyMuscleLoad) {
+      final week = _dateText(row['week_start']);
+      grouped.putIfAbsent(week, () => []);
+      grouped[week]!.add(row);
+    }
+
+    final weeks = grouped.keys.toList()..sort((a, b) => b.compareTo(a));
+
+    return _sectionContainer(
+      title: 'Carga muscular estimada',
+      child: weeks.isEmpty
+          ? const Text('Sem dados de carga muscular.')
+          : Column(
+              children: weeks.take(8).map((week) {
+                final rows = grouped[week]!
+                  ..sort((a, b) =>
+                      _n(b['total_load_points']).compareTo(_n(a['total_load_points'])));
+
+                return Container(
+                  width: double.infinity,
+                  margin: const EdgeInsets.only(bottom: 10),
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(12),
+                    color: const Color(0xFFF7F7F9),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Semana de $week',
+                        style: const TextStyle(fontWeight: FontWeight.w700),
+                      ),
+                      const SizedBox(height: 8),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: rows.take(12).map((row) {
+                          final muscle = _s(row['muscle_group_name']);
+                          final total = _n(row['total_load_points']).toStringAsFixed(1);
+                          final strength = _n(row['strength_load_points']).toStringAsFixed(1);
+                          final modality = _n(row['modality_load_points']).toStringAsFixed(1);
+
+                          return Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 6,
+                            ),
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(20),
+                              color: const Color(0xFFE9EDF5),
+                            ),
+                            child: Text(
+                              '$muscle • total $total • força $strength • modalidade $modality',
+                            ),
+                          );
+                        }).toList(),
+                      ),
+                    ],
+                  ),
+                );
+              }).toList(),
+            ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -1119,6 +1190,7 @@ class _CoachAthleteSummaryScreenState extends State<CoachAthleteSummaryScreen> {
                 _buildInjuriesSection(),
                 _buildWeeklyLoadSection(),
                 _buildDashboardSection(),
+                _buildMuscleLoadSection(),
               ],
             ),
           ),
