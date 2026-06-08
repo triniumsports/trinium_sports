@@ -19,6 +19,14 @@
 - resumo global do atleta para profissionais
 - estrutura mínima para sincronização futura com relógios
 - estrutura mínima para retorno do executado pelo atleta
+- home unificada do atleta
+- home unificada do profissional
+- módulo de restrições / lesões
+- módulo de exames e documentos
+- dashboard planned vs executed
+- carga por modalidade
+- carga muscular estimada
+- base muscular por modalidade
 
 ## Nova camada do produto
 O roadmap incorpora acompanhamento 360° do atleta, incluindo:
@@ -30,11 +38,11 @@ O roadmap incorpora acompanhamento 360° do atleta, incluindo:
 - visão global compartilhada entre treinadores, nutrição, fisioterapia e médico
 
 ## Em andamento
-- refinamento visual do builder
+- tradução visual dos grupos musculares para português no frontend
+- refinamento visual dos dashboards
 - melhoria de UX para treino de força
 - organização por modalidade e tipo de profissional
-- preparação da camada clínica/documental do atleta
-- consolidação da experiência em dashboards
+- consolidação do controle de carga
 
 ## Trilhas principais
 
@@ -62,8 +70,11 @@ O roadmap incorpora acompanhamento 360° do atleta, incluindo:
 - home profissional unificada
 - carga por modalidade
 - carga por grupo muscular
-- planejado vs executado
+- planned vs executed
+- carga muscular estimada
 - mapa corporal / músculos
+- score de risco por atleta
+- score de risco por grupo muscular
 
 ### 4. Experiência multi-device
 - layout mobile
@@ -75,16 +86,17 @@ O roadmap incorpora acompanhamento 360° do atleta, incluindo:
 - integração com relógios
 - ingestão do executado
 - consolidação automática
+- uso de FC repouso, VO2 e dados fisiológicos via integração / exames
 
 ## Próximos passos imediatos
-1. corrigir carregamento de profissionais ativos na home do atleta
-2. criar nova Home do Atleta unificada
-3. criar nova Home do Profissional unificada
-4. criar módulo de upload e gestão de exames/documentos
-5. evoluir módulo de nutrição
-6. evoluir módulo de fisioterapia e médico
-7. consolidar dashboard de carga
-8. estruturar modelo de músculos por modalidade
+1. traduzir grupos musculares e labels técnicos para português no frontend
+2. criar score de risco muscular por semana
+3. criar score de risco global do atleta
+4. iniciar mapa corporal visual por regiões
+5. ligar lesões/restrições à mesma região corporal da carga
+6. consolidar exames/documentos no resumo do atleta
+7. evoluir módulo de nutrição
+8. evoluir módulo de fisioterapia e médico
 9. preparar responsividade desktop/mobile
 10. limpar warnings antigos do frontend
 
@@ -95,4 +107,5 @@ O roadmap incorpora acompanhamento 360° do atleta, incluindo:
 - biblioteca por profissional
 - histórico consolidado do atleta
 - métricas premium
+- score de sobrecarga aguda vs crônica
 - sincronização real com wearable ecosystem

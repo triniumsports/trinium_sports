@@ -13,6 +13,11 @@ Hoje o produto já cobre:
 - provas alvo
 - disponibilidade semanal estruturada
 - feedback do atleta ao concluir treino
+- restrições / lesões
+- exames e documentos
+- dashboard planned vs executed
+- carga por modalidade
+- carga muscular estimada
 - base preparada para nutrição, fisioterapia e médico
 - base preparada para futura sincronização com relógios
 
@@ -30,13 +35,11 @@ Foram estruturados e/ou ajustados:
 - `strength_exercises_catalog`
 - `target_races`
 - `weekly_constraints`
-
-## Novas estruturas da camada 360°
-Foram modeladas para suportar visão clínica e compartilhada do atleta:
 - `athlete_injuries_restrictions`
 - `athlete_medical_documents`
 - `athlete_document_access`
 - `athlete_document_access_logs`
+- `modality_muscle_load_map`
 
 ## Views principais
 - `v_professionals_marketplace`
@@ -48,6 +51,9 @@ Foram modeladas para suportar visão clínica e compartilhada do atleta:
 - `v_prescribed_workouts_mvp`
 - `v_strength_exercises_catalog`
 - `v_prescribed_strength_exercises`
+- `v_athlete_training_load`
+- `v_athlete_training_load_weekly`
+- `v_athlete_muscle_load_weekly`
 
 ## Regras já estabilizadas
 - múltiplos profissionais podem estar ativos para o mesmo atleta
@@ -59,6 +65,20 @@ Foram modeladas para suportar visão clínica e compartilhada do atleta:
 - o atleta já consegue visualizar treinos publicados dos dois tipos
 - o builder de força já usa catálogo com filtro por grupo muscular e equipamento
 - o ecossistema inclui médico como papel previsto na arquitetura
+- a carga muscular estimada já combina força real + estimativa por modalidade
+
+## Diretriz fisiológica atual
+Campos fisiológicos do atleta foram mantidos na arquitetura, mas a responsabilidade de preenchimento passa a ser:
+- treinador
+- integrações com relógios
+- exames clínicos / ergométricos
+
+Ou seja, o atleta não deve preencher manualmente:
+- FC repouso
+- FC máxima clínica
+- VO2
+- BMR
+- fase
 
 ## Frontend
 Fluxo principal ajustado:
@@ -75,7 +95,10 @@ Fluxo principal ajustado:
 - `athlete_weekly_availability_edit_screen.dart`
 - `athlete_my_professionals_screen.dart`
 - `coach_athlete_summary_screen.dart`
+- `athlete_injuries_restrictions_screen.dart`
+- `athlete_medical_documents_screen.dart`
 - `professional_profile_form_screen.dart`
+- `professional_home_dashboard_screen.dart`
 
 ## Nova direção do produto
 O Trinium passa a se posicionar como plataforma colaborativa de performance, saúde e prevenção, conectando:
@@ -86,12 +109,12 @@ O Trinium passa a se posicionar como plataforma colaborativa de performance, sa�
 - médicos
 
 ## Próxima macrofase
-Dashboard 360°:
-- Home do Atleta unificada
-- Home do Profissional unificada
-- controle de carga
-- visão planejado vs executado
-- futura camada corporal/muscular interativa
+Controle de risco e mapa corporal:
+- tradução total do dashboard para português
+- score de sobrecarga
+- mapa corporal visual
+- cruzamento entre carga, dor e lesão
+- leitura mais executiva para profissionais
 
 ## Situação do analyze
-Projeto compilando sem erro bloqueante, com warnings antigos ainda pendentes de limpeza.
+Projeto compilando e abrindo corretamente com servidor SPA fallback, com warnings antigos ainda pendentes de limpeza.

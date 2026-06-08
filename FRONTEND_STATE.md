@@ -14,27 +14,38 @@
 - `lib/screens/athlete_weekly_availability_edit_screen.dart`
 - `lib/screens/athlete_my_professionals_screen.dart`
 - `lib/screens/coach_athlete_summary_screen.dart`
+- `lib/screens/athlete_injuries_restrictions_screen.dart`
+- `lib/screens/athlete_medical_documents_screen.dart`
 - `lib/screens/professional_profile_form_screen.dart`
+- `lib/screens/professional_home_dashboard_screen.dart`
 
 ## Fluxo atual do atleta
 - completa perfil
 - busca profissionais
 - solicita vínculo
-- acessa agenda
+- acessa home unificada
 - visualiza treinos publicados
-- visualiza treino de endurance com steps
-- visualiza treino de força com exercício, meta, carga e descanso
+- visualiza planned vs executed
+- visualiza carga muscular estimada
+- visualiza profissionais ativos
 - cadastra provas alvo
 - edita disponibilidade semanal
+- edita restrições alimentares
+- cadastra restrições / lesões
+- sobe exames e documentos
 - informa feedback ao concluir treino
 
 ## Fluxo atual do profissional
 - completa perfil
 - aceita vínculo
+- acessa home unificada de portfólio
+- visualiza prioridades de gestão
 - cria treino manual de endurance
 - cria treino manual de força
 - publica treino para atleta
 - visualiza resumo global do atleta
+- visualiza planned vs executed
+- visualiza carga muscular estimada
 
 ## Builder de endurance
 - etapas simples
@@ -59,15 +70,21 @@ O frontend deverá convergir para:
 - dashboards de leitura + edição rápida
 - menos navegação entre telas separadas
 - layouts responsivos para mobile e desktop
+- tradução total da camada analítica para português
 
 ## Pendências visuais e de UX
-- corrigir carregamento de profissionais ativos na home do atleta
-- melhorar a experiência da home do atleta
-- melhorar a experiência da home do profissional
-- consolidar cards editáveis em página única
-- estruturar dashboard de carga
-- preparar futura visualização corporal/muscular
+- traduzir grupos musculares e labels técnicos
+- destacar melhor a carga muscular estimada
+- criar score visual de risco
+- estruturar mapa corporal visual
+- consolidar leitura executiva para profissionais
 - limpar warnings antigos
 
 ## Situação técnica
-Frontend funcional no fluxo principal do MVP, com treinos de endurance e força já operacionais, e evolução em andamento para dashboards 360°.
+Frontend funcional no fluxo principal do MVP, com:
+- treinos de endurance e força operacionais
+- restrições/lesões operacionais
+- exames/documentos operacionais
+- planned vs executed operacional
+- carga muscular estimada operacional
+- abertura estável via servidor SPA fallback

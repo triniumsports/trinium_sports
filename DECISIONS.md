@@ -70,6 +70,23 @@ O produto terá a mesma base de negócio para web e mobile, mas com layout respo
 - mobile-first para atleta
 - desktop-first para profissionais
 
+## Decisão fisiológica
+Campos fisiológicos permanecem no banco, mas não são mais responsabilidade de preenchimento manual do atleta.
+Esses dados devem vir de:
+- exames clínicos
+- treinador
+- relógios / integrações
+
+## Decisão de carga
+Carga estimada não será tratada apenas como volume absoluto.
+A leitura de risco deve combinar:
+- carga aguda
+- carga crônica
+- feedback do atleta
+- restrições/lesões
+- aderência
+- prova próxima
+
 ## Decisão futura de diferencial
 O controle de carga visual com músculos primários/secundários por modalidade e por treino de força passa a ser um diferencial estratégico do produto.
 
