@@ -623,7 +623,7 @@ class _ProfessionalHomeDashboardScreenState
                     _section(
                       title: 'Próxima evolução do dashboard',
                       child: const Text(
-                        'Próximo passo: indicadores musculares, alertas automáticos, exames/documentos e score de risco por prova.',
+                        'Próximo passo: score muscular, mapa corporal visual, exames/documentos no resumo e risco por prova.',
                       ),
                     ),
                   ],

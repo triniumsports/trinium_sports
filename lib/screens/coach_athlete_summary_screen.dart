@@ -28,8 +28,6 @@ class _CoachAthleteSummaryScreenState extends State<CoachAthleteSummaryScreen> {
   List<Map<String, dynamic>> _publishedWorkouts = [];
   List<Map<String, dynamic>> _targetRaces = [];
   List<Map<String, dynamic>> _weeklyConstraints = [];
-  List<Map<String, dynamic>> _enduranceSteps = [];
-  List<Map<String, dynamic>> _strengthExercises = [];
   List<Map<String, dynamic>> _weeklyLoad = [];
   List<Map<String, dynamic>> _weeklyMuscleLoad = [];
 
@@ -130,35 +128,6 @@ class _CoachAthleteSummaryScreenState extends State<CoachAthleteSummaryScreen> {
       _weeklyLoad = (weeklyLoadRes as List).cast<Map<String, dynamic>>();
       _weeklyMuscleLoad =
           (weeklyMuscleLoadRes as List).cast<Map<String, dynamic>>();
-
-      final workoutIds = _publishedWorkouts
-          .map((e) => e['id'])
-          .whereType<int>()
-          .toList();
-
-      if (workoutIds.isNotEmpty) {
-        final inValues = '(${workoutIds.join(',')})';
-
-        final enduranceRes = await _client
-            .from('prescribed_workout_steps')
-            .select(
-              'prescribed_workout_id, duration_type, duration_value, duration_unit, step_category',
-            )
-            .filter('prescribed_workout_id', 'in', inValues);
-
-        final strengthRes = await _client
-            .from('v_prescribed_strength_exercises')
-            .select(
-              'prescribed_workout_id, muscle_group_primary_name, exercise_name, exercise_order',
-            )
-            .filter('prescribed_workout_id', 'in', inValues);
-
-        _enduranceSteps = (enduranceRes as List).cast<Map<String, dynamic>>();
-        _strengthExercises = (strengthRes as List).cast<Map<String, dynamic>>();
-      } else {
-        _enduranceSteps = [];
-        _strengthExercises = [];
-      }
     } catch (e) {
       _msg = 'Erro ao carregar resumo do atleta: $e';
     } finally {
@@ -233,76 +202,53 @@ class _CoachAthleteSummaryScreenState extends State<CoachAthleteSummaryScreen> {
     }
   }
 
-  Map<String, dynamic> _loadDashboard() {
-    int totalPublished = _publishedWorkouts.length;
-    int totalCompleted = 0;
-    num totalDurationSec = 0;
-    num totalDistanceMeters = 0;
-
-    final Map<String, int> byActivitySessions = {};
-    final Map<String, int> byMuscleGroup = {};
-    final Map<String, Map<String, num>> byWeek = {};
-    final Map<String, Map<String, int>> byWeekActivity = {};
-
-    for (final w in _publishedWorkouts) {
-      final activity = _activityLabel(_s(w['activity_type_id']));
-      byActivitySessions[activity] = (byActivitySessions[activity] ?? 0) + 1;
-
-      final status = _s(w['status']);
-      if (status == 'completed') totalCompleted++;
-
-      final duration = _n(w['planned_duration_sec']);
-      totalDurationSec += duration;
-
-      final date = _dateText(w['scheduled_date']);
-      if (date.isNotEmpty) {
-        byWeek.putIfAbsent(date, () => {
-              'hours_sec': 0,
-              'distance_m': 0,
-              'sessions': 0,
-            });
-        byWeek[date]!['hours_sec'] =
-            (byWeek[date]!['hours_sec'] ?? 0) + duration;
-        byWeek[date]!['sessions'] =
-            (byWeek[date]!['sessions'] ?? 0) + 1;
-
-        byWeekActivity.putIfAbsent(date, () => {});
-        byWeekActivity[date]![activity] =
-            (byWeekActivity[date]![activity] ?? 0) + 1;
-      }
+  String _muscleLabel(String raw) {
+    switch (raw.toLowerCase()) {
+      case 'abdominals':
+        return 'Abdominais';
+      case 'hip_abductors':
+        return 'Abdutores de quadril';
+      case 'hip_adductors':
+        return 'Adutores de quadril';
+      case 'forearms':
+        return 'Antebraços';
+      case 'biceps':
+        return 'Bíceps';
+      case 'hamstrings':
+        return 'Posterior';
+      case 'glutes':
+        return 'Glúteos';
+      case 'calves':
+        return 'Panturrilhas';
+      case 'chest':
+        return 'Peito';
+      case 'quadriceps':
+        return 'Quadríceps';
+      case 'trapezius':
+        return 'Trapézio';
+      case 'triceps':
+        return 'Tríceps';
+      case 'shoulders':
+        return 'Ombros';
+      case 'back':
+        return 'Costas';
+      case 'lower_back':
+        return 'Lombar';
+      case 'full_body':
+        return 'Corpo inteiro';
+      case 'mobility':
+        return 'Mobilidade';
+      case 'hip_flexors':
+        return 'Flexores de quadril';
+      case 'rotator_cuff':
+        return 'Manguito rotador';
+      case 'neck':
+        return 'Pescoço';
+      case 'core':
+        return 'Core';
+      default:
+        return raw.isEmpty ? '-' : raw;
     }
-
-    for (final step in _enduranceSteps) {
-      final durationType = _s(step['duration_type']);
-      if (durationType == 'distance') {
-        final rawValue = _n(step['duration_value']);
-        final unit = _s(step['duration_unit']).toLowerCase();
-        num meters = rawValue;
-        if (unit == 'km') meters = rawValue * 1000;
-        totalDistanceMeters += meters;
-      }
-    }
-
-    for (final row in _strengthExercises) {
-      final muscle = _s(row['muscle_group_primary_name']).isEmpty
-          ? 'Sem grupo'
-          : _s(row['muscle_group_primary_name']);
-      byMuscleGroup[muscle] = (byMuscleGroup[muscle] ?? 0) + 1;
-    }
-
-    final weekEntries = byWeek.entries.toList()
-      ..sort((a, b) => b.key.compareTo(a.key));
-
-    return {
-      'total_published': totalPublished,
-      'total_completed': totalCompleted,
-      'total_duration_sec': totalDurationSec,
-      'total_distance_m': totalDistanceMeters,
-      'by_activity_sessions': byActivitySessions,
-      'by_muscle_group': byMuscleGroup,
-      'by_week': weekEntries,
-      'by_week_activity': byWeekActivity,
-    };
   }
 
   Map<String, dynamic> _weeklyLoadSummary() {
@@ -335,6 +281,36 @@ class _CoachAthleteSummaryScreenState extends State<CoachAthleteSummaryScreen> {
       'strength_exercises': strengthExercises,
       'adherence_pct': adherence,
     };
+  }
+
+  String _riskLabelFromLoad(
+    double currentLoad,
+    double previousAvg,
+    bool hasActiveInjury,
+    bool hasWeakFeedback,
+  ) {
+    if (currentLoad <= 0 && !hasActiveInjury && !hasWeakFeedback) return 'OK';
+
+    final ratio = previousAvg <= 0 ? currentLoad : currentLoad / previousAvg;
+
+    if (hasActiveInjury || (hasWeakFeedback && ratio >= 1.2) || ratio >= 1.5) {
+      return 'Perigo';
+    }
+    if (hasWeakFeedback || ratio >= 1.2) {
+      return 'Atenção';
+    }
+    return 'OK';
+  }
+
+  Color _riskColor(String risk) {
+    switch (risk) {
+      case 'Perigo':
+        return Colors.red;
+      case 'Atenção':
+        return Colors.orange;
+      default:
+        return Colors.green;
+    }
   }
 
   Widget _metricCard({
@@ -793,164 +769,6 @@ class _CoachAthleteSummaryScreenState extends State<CoachAthleteSummaryScreen> {
     );
   }
 
-  Widget _buildDashboardSection() {
-    final d = _loadDashboard();
-    final byActivitySessions = (d['by_activity_sessions'] as Map<String, int>);
-    final byMuscleGroup = (d['by_muscle_group'] as Map<String, int>);
-    final byWeek = (d['by_week'] as List<MapEntry<String, Map<String, num>>>);
-    final byWeekActivity = (d['by_week_activity'] as Map<String, Map<String, int>>);
-
-    return _sectionContainer(
-      title: 'Dashboard de carga',
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Wrap(
-            spacing: 12,
-            runSpacing: 12,
-            children: [
-              _metricCard(
-                title: 'Treinos publicados',
-                value: '${d['total_published']}',
-                icon: Icons.publish,
-              ),
-              _metricCard(
-                title: 'Treinos concluídos',
-                value: '${d['total_completed']}',
-                icon: Icons.check_circle,
-              ),
-              _metricCard(
-                title: 'Horas totais',
-                value: _formatHours(_n(d['total_duration_sec'])),
-                icon: Icons.timer,
-              ),
-              _metricCard(
-                title: 'Distância total',
-                value: '${(_n(d['total_distance_m']) / 1000).toStringAsFixed(1)} km',
-                icon: Icons.route,
-              ),
-            ],
-          ),
-          const SizedBox(height: 18),
-          const Text(
-            'Carga por modalidade',
-            style: TextStyle(fontWeight: FontWeight.w700),
-          ),
-          const SizedBox(height: 8),
-          if (byActivitySessions.isEmpty)
-            const Text('Sem distribuição por modalidade.')
-          else
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: byActivitySessions.entries.map((entry) {
-                return Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(20),
-                    color: const Color(0xFFE9EDF5),
-                  ),
-                  child: Text('${entry.key}: ${entry.value} sessões'),
-                );
-              }).toList(),
-            ),
-          const SizedBox(height: 18),
-          const Text(
-            'Carga de força por grupo muscular',
-            style: TextStyle(fontWeight: FontWeight.w700),
-          ),
-          const SizedBox(height: 8),
-          if (byMuscleGroup.isEmpty)
-            const Text('Sem dados de força por grupo muscular.')
-          else
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: byMuscleGroup.entries.map((entry) {
-                return Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(20),
-                    color: const Color(0xFFE9EDF5),
-                  ),
-                  child: Text('${entry.key}: ${entry.value} exercícios'),
-                );
-              }).toList(),
-            ),
-          const SizedBox(height: 18),
-          const Text(
-            'Horas / distância por semana',
-            style: TextStyle(fontWeight: FontWeight.w700),
-          ),
-          const SizedBox(height: 8),
-          if (byWeek.isEmpty)
-            const Text('Sem dados semanais.')
-          else
-            Column(
-              children: byWeek.take(8).map((entry) {
-                final week = entry.key;
-                final data = entry.value;
-                final hoursSec = _n(data['hours_sec']);
-                final distanceM = _n(data['distance_m']);
-                final sessions = _n(data['sessions']);
-                final activities = byWeekActivity[week] ?? {};
-
-                return Container(
-                  width: double.infinity,
-                  margin: const EdgeInsets.only(bottom: 10),
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(12),
-                    color: const Color(0xFFF7F7F9),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Wrap(
-                        spacing: 12,
-                        runSpacing: 8,
-                        children: [
-                          Text(
-                            'Semana de $week',
-                            style: const TextStyle(fontWeight: FontWeight.w700),
-                          ),
-                          Text('Sessões: ${sessions.toInt()}'),
-                          Text('Horas: ${(hoursSec / 3600).toStringAsFixed(1)}h'),
-                          Text('Distância: ${(distanceM / 1000).toStringAsFixed(1)} km'),
-                        ],
-                      ),
-                      if (activities.isNotEmpty) ...[
-                        const SizedBox(height: 8),
-                        Wrap(
-                          spacing: 8,
-                          runSpacing: 8,
-                          children: activities.entries.map((a) {
-                            return Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 10,
-                                vertical: 6,
-                              ),
-                              decoration: BoxDecoration(
-                                borderRadius: BorderRadius.circular(20),
-                                color: const Color(0xFFE9EDF5),
-                              ),
-                              child: Text('${a.key}: ${a.value}'),
-                            );
-                          }).toList(),
-                        ),
-                      ],
-                    ],
-                  ),
-                );
-              }).toList(),
-            ),
-        ],
-      ),
-    );
-  }
-
   Widget _buildWeeklyLoadSection() {
     final summary = _weeklyLoadSummary();
 
@@ -964,7 +782,7 @@ class _CoachAthleteSummaryScreenState extends State<CoachAthleteSummaryScreen> {
     final orderedWeeks = grouped.keys.toList()..sort((a, b) => b.compareTo(a));
 
     return _sectionContainer(
-      title: 'Planned vs Executed',
+      title: 'Planejado vs Executado',
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -1055,27 +873,6 @@ class _CoachAthleteSummaryScreenState extends State<CoachAthleteSummaryScreen> {
                           Text('Força: $strengthExercises exercícios'),
                         ],
                       ),
-                      const SizedBox(height: 8),
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
-                        children: rows.map((row) {
-                          final activity = _activityLabel(_s(row['activity_type_id']));
-                          final planned = _n(row['planned_sessions']).toInt();
-                          final executed = _n(row['executed_sessions']).toInt();
-                          return Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 10,
-                              vertical: 6,
-                            ),
-                            decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(20),
-                              color: const Color(0xFFE9EDF5),
-                            ),
-                            child: Text('$activity: $executed/$planned'),
-                          );
-                        }).toList(),
-                      ),
                     ],
                   ),
                 );
@@ -1102,9 +899,24 @@ class _CoachAthleteSummaryScreenState extends State<CoachAthleteSummaryScreen> {
           ? const Text('Sem dados de carga muscular.')
           : Column(
               children: weeks.take(8).map((week) {
-                final rows = grouped[week]!
+                final rows = List<Map<String, dynamic>>.from(grouped[week]!)
                   ..sort((a, b) =>
                       _n(b['total_load_points']).compareTo(_n(a['total_load_points'])));
+
+                final previousWeeks = weeks.where((w) => w != week).toList();
+                final previousRows = <Map<String, dynamic>>[];
+                for (final prev in previousWeeks.take(3)) {
+                  previousRows.addAll(grouped[prev] ?? []);
+                }
+
+                final hasActiveInjury = _injuries.any((i) {
+                  final status = _s(i['status']);
+                  return status == 'active' || status == 'monitoring';
+                });
+
+                final hasWeakFeedback = _weeklyLoad.any((r) =>
+                    _dateText(r['week_start']) == week &&
+                    _n(r['weak_feedback_count']).toInt() > 0);
 
                 return Container(
                   width: double.infinity,
@@ -1122,30 +934,75 @@ class _CoachAthleteSummaryScreenState extends State<CoachAthleteSummaryScreen> {
                         style: const TextStyle(fontWeight: FontWeight.w700),
                       ),
                       const SizedBox(height: 8),
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
-                        children: rows.take(12).map((row) {
-                          final muscle = _s(row['muscle_group_name']);
-                          final total = _n(row['total_load_points']).toStringAsFixed(1);
-                          final strength = _n(row['strength_load_points']).toStringAsFixed(1);
-                          final modality = _n(row['modality_load_points']).toStringAsFixed(1);
+                      ...rows.take(12).map((row) {
+                        final muscle = _s(row['muscle_group_name']);
+                        final total = _n(row['total_load_points']).toDouble();
+                        final strength = _n(row['strength_load_points']).toDouble();
+                        final modality = _n(row['modality_load_points']).toDouble();
 
-                          return Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 10,
-                              vertical: 6,
-                            ),
-                            decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(20),
-                              color: const Color(0xFFE9EDF5),
-                            ),
-                            child: Text(
-                              '$muscle • total $total • força $strength • modalidade $modality',
-                            ),
-                          );
-                        }).toList(),
-                      ),
+                        final prevSame = previousRows
+                            .where((r) => _s(r['muscle_group_name']) == muscle)
+                            .toList();
+
+                        final previousAvg = prevSame.isEmpty
+                            ? 0.0
+                            : prevSame
+                                    .map((r) => _n(r['total_load_points']).toDouble())
+                                    .reduce((a, b) => a + b) /
+                                prevSame.length;
+
+                        final risk = _riskLabelFromLoad(
+                          total,
+                          previousAvg,
+                          hasActiveInjury,
+                          hasWeakFeedback,
+                        );
+
+                        final riskColor = _riskColor(risk);
+
+                        return Container(
+                          width: double.infinity,
+                          margin: const EdgeInsets.only(bottom: 8),
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(12),
+                            color: Colors.white,
+                          ),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  _muscleLabel(muscle),
+                                  style: const TextStyle(fontWeight: FontWeight.w700),
+                                ),
+                              ),
+                              Text('Total ${total.toStringAsFixed(1)}'),
+                              const SizedBox(width: 12),
+                              Text('Força ${strength.toStringAsFixed(1)}'),
+                              const SizedBox(width: 12),
+                              Text('Modalidade ${modality.toStringAsFixed(1)}'),
+                              const SizedBox(width: 12),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 10,
+                                  vertical: 6,
+                                ),
+                                decoration: BoxDecoration(
+                                  borderRadius: BorderRadius.circular(20),
+                                  color: riskColor.withValues(alpha: 0.12),
+                                ),
+                                child: Text(
+                                  risk,
+                                  style: TextStyle(
+                                    color: riskColor,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+                      }),
                     ],
                   ),
                 );
@@ -1189,7 +1046,6 @@ class _CoachAthleteSummaryScreenState extends State<CoachAthleteSummaryScreen> {
                 _buildCareTeamSection(),
                 _buildInjuriesSection(),
                 _buildWeeklyLoadSection(),
-                _buildDashboardSection(),
                 _buildMuscleLoadSection(),
               ],
             ),
