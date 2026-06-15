@@ -363,21 +363,6 @@ class _AthleteHomeScreenState extends State<AthleteHomeScreen> {
     return s.length >= 10 ? s.substring(0, 10) : s;
   }
 
-  String _feedbackLabel(String raw) {
-    switch (raw) {
-      case 'weak':
-        return 'Fraco';
-      case 'normal':
-        return 'Normal';
-      case 'strong':
-        return 'Forte';
-      case 'very_strong':
-        return 'Muito Forte';
-      default:
-        return raw;
-    }
-  }
-
   String _docTypeLabel(String raw) {
     switch (raw) {
       case 'lab_exam':
@@ -402,6 +387,55 @@ class _AthleteHomeScreenState extends State<AthleteHomeScreen> {
         return 'Outro';
       default:
         return raw;
+    }
+  }
+
+  String _muscleLabel(String raw) {
+    switch (raw.toLowerCase()) {
+      case 'abdominals':
+        return 'Abdominais';
+      case 'hip_abductors':
+        return 'Abdutores de quadril';
+      case 'hip_adductors':
+        return 'Adutores de quadril';
+      case 'forearms':
+        return 'Antebraços';
+      case 'biceps':
+        return 'Bíceps';
+      case 'hamstrings':
+        return 'Posterior';
+      case 'glutes':
+        return 'Glúteos';
+      case 'calves':
+        return 'Panturrilhas';
+      case 'chest':
+        return 'Peito';
+      case 'quadriceps':
+        return 'Quadríceps';
+      case 'trapezius':
+        return 'Trapézio';
+      case 'triceps':
+        return 'Tríceps';
+      case 'shoulders':
+        return 'Ombros';
+      case 'back':
+        return 'Costas';
+      case 'lower_back':
+        return 'Lombar';
+      case 'full_body':
+        return 'Corpo inteiro';
+      case 'mobility':
+        return 'Mobilidade';
+      case 'hip_flexors':
+        return 'Flexores de quadril';
+      case 'rotator_cuff':
+        return 'Manguito rotador';
+      case 'neck':
+        return 'Pescoço';
+      case 'core':
+        return 'Core';
+      default:
+        return raw.isEmpty ? '-' : raw;
     }
   }
 
@@ -939,7 +973,7 @@ class _AthleteHomeScreenState extends State<AthleteHomeScreen> {
     final s = _weeklyLoadSummary();
 
     return _section(
-      title: 'Planned vs Executed',
+      title: 'Planejado vs Executado',
       child: Wrap(
         spacing: 12,
         runSpacing: 12,
@@ -949,7 +983,7 @@ class _AthleteHomeScreenState extends State<AthleteHomeScreen> {
           _metricCard('Aderência', '${(s['adherence_pct'] as double).toStringAsFixed(0)}%', Icons.percent),
           _metricCard('Feedback fraco', '${s['weak_feedback']}', Icons.warning_amber),
           _metricCard(
-            'Horas exec.',
+            'Horas executadas',
             '${(_n(s['executed_duration_sec']) / 3600).toStringAsFixed(1)}h',
             Icons.timer,
           ),
@@ -979,7 +1013,7 @@ class _AthleteHomeScreenState extends State<AthleteHomeScreen> {
       title: 'Carga muscular estimada',
       child: Column(
         children: weeks.take(4).map((week) {
-          final rows = grouped[week]!
+          final rows = List<Map<String, dynamic>>.from(grouped[week]!)
             ..sort((a, b) => _n(b['total_load_points']).compareTo(_n(a['total_load_points'])));
 
           return Container(
@@ -1002,7 +1036,7 @@ class _AthleteHomeScreenState extends State<AthleteHomeScreen> {
                   spacing: 8,
                   runSpacing: 8,
                   children: rows.take(10).map((row) {
-                    final muscle = _s(row['muscle_group_name']);
+                    final muscle = _muscleLabel(_s(row['muscle_group_name']));
                     final total = _n(row['total_load_points']).toStringAsFixed(1);
                     return _tinyChip('$muscle: $total');
                   }).toList(),
