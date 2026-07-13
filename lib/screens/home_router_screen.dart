@@ -193,6 +193,7 @@ class _AthleteHomeScreenState extends State<AthleteHomeScreen> {
 
   Map<String, dynamic>? _profile;
   Map<String, dynamic>? _athlete;
+  Map<String, dynamic>? _currentNutritionPlan;
   List<Map<String, dynamic>> _workouts = [];
   List<Map<String, dynamic>> _careTeam = [];
   List<Map<String, dynamic>> _targetRaces = [];
@@ -280,6 +281,11 @@ class _AthleteHomeScreenState extends State<AthleteHomeScreen> {
             .select()
             .eq('athlete_id', user.id)
             .order('week_start', ascending: false),
+        _client
+            .from('v_athlete_current_nutrition_plan')
+            .select()
+            .eq('athlete_id', user.id)
+            .maybeSingle(),
       ]);
 
       _profile = results[0] == null ? null : Map<String, dynamic>.from(results[0] as Map);
@@ -292,6 +298,8 @@ class _AthleteHomeScreenState extends State<AthleteHomeScreen> {
       _documents = (results[7] as List).cast<Map<String, dynamic>>();
       _weeklyLoad = (results[8] as List).cast<Map<String, dynamic>>();
       _weeklyMuscleLoad = (results[9] as List).cast<Map<String, dynamic>>();
+      _currentNutritionPlan =
+          results[10] == null ? null : Map<String, dynamic>.from(results[10] as Map);
     } catch (e) {
       _msg = 'Erro ao carregar home do atleta: $e';
     } finally {
@@ -831,6 +839,54 @@ class _AthleteHomeScreenState extends State<AthleteHomeScreen> {
     );
   }
 
+  Widget _buildNutritionSection() {
+    final planName = _s(_currentNutritionPlan?['plan_name']);
+    final goal = _s(_currentNutritionPlan?['goal']);
+    final professionalName = _s(_currentNutritionPlan?['professional_name']);
+    final startDate = _dateText(_currentNutritionPlan?['start_date']);
+    final endDate = _dateText(_currentNutritionPlan?['end_date']);
+    final status = _s(_currentNutritionPlan?['status']);
+    final notes = _s(_currentNutritionPlan?['notes']);
+
+    return _section(
+      title: 'Plano nutricional',
+      actions: [
+        FilledButton.tonal(
+          onPressed: () {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Tela de prescrição nutricional será a próxima entrega.'),
+              ),
+            );
+          },
+          child: const Text('Abrir'),
+        ),
+      ],
+      child: _currentNutritionPlan == null
+          ? const Text('Nenhum plano nutricional ativo encontrado.')
+          : Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  planName.isEmpty ? 'Plano nutricional' : planName,
+                  style: const TextStyle(fontWeight: FontWeight.w700),
+                ),
+                const SizedBox(height: 6),
+                if (professionalName.isNotEmpty)
+                  Text('Nutricionista: $professionalName'),
+                if (goal.isNotEmpty) Text('Objetivo: $goal'),
+                if (startDate.isNotEmpty || endDate.isNotEmpty)
+                  Text('Vigência: ${startDate.isEmpty ? "-" : startDate} até ${endDate.isEmpty ? "-" : endDate}'),
+                if (status.isNotEmpty) Text('Status: $status'),
+                if (notes.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  Text('Observações: $notes'),
+                ],
+              ],
+            ),
+    );
+  }
+
   Widget _buildDietSection() {
     final details = _athlete?['dietary_restrictions_details'];
     final allergies = details is Map ? _s(details['allergies']) : '';
@@ -1069,6 +1125,7 @@ class _AthleteHomeScreenState extends State<AthleteHomeScreen> {
       _buildProfessionalsSection(),
       _buildRacesSection(),
       _buildAvailabilitySection(),
+      _buildNutritionSection(),
       _buildDietSection(),
       _buildInjuriesSection(),
       _buildDocumentsSection(),
@@ -1084,9 +1141,17 @@ class _AthleteHomeScreenState extends State<AthleteHomeScreen> {
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Expanded(child: Column(children: [sections[1], sections[3], sections[5], sections[7], sections[8]])),
+              Expanded(
+                child: Column(
+                  children: [sections[1], sections[3], sections[5], sections[6], sections[8], sections[9]],
+                ),
+              ),
               const SizedBox(width: 16),
-              Expanded(child: Column(children: [sections[2], sections[4], sections[6], sections[9]])),
+              Expanded(
+                child: Column(
+                  children: [sections[2], sections[4], sections[7], sections[10]],
+                ),
+              ),
             ],
           ),
         ],
@@ -1124,7 +1189,7 @@ class _AthleteHomeScreenState extends State<AthleteHomeScreen> {
                     _section(
                       title: 'Próxima evolução do dashboard',
                       child: const Text(
-                        'Próximo passo: consolidar planejado vs executado, carga por modalidade, carga por grupo muscular e mapa corporal interativo.',
+                        'Próximo passo: tela de prescrição nutricional, integração completa do care team e dashboards mais visuais.',
                       ),
                     ),
                   ],
