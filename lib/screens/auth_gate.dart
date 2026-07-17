@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+
 import '../services/auth_service.dart';
 import 'home_router_screen.dart';
 
@@ -10,30 +11,134 @@ class AuthGate extends StatefulWidget {
 }
 
 class _AuthGateState extends State<AuthGate> {
-  final _authService = AuthService();
+  final AuthService _authService = AuthService();
 
-  final _emailController = TextEditingController();
-  final _passwordController = TextEditingController();
-  final _nameController = TextEditingController();
-  final _crefController = TextEditingController();
+  final TextEditingController _nameController =
+      TextEditingController();
+
+  final TextEditingController _emailController =
+      TextEditingController();
+
+  final TextEditingController _passwordController =
+      TextEditingController();
+
+  final TextEditingController _crefController =
+      TextEditingController();
 
   String _mode = 'login';
-  String _role = 'athlete';
+
+  /*
+   * Opção visual escolhida pelo usuário:
+   *
+   * athlete
+   * coach
+   * nutritionist
+   */
+  String _accountType = 'athlete';
+
   bool _loading = false;
+  bool _obscurePassword = true;
+
   String? _message;
 
+  bool get _isRegister => _mode == 'register';
+
+  bool get _isProfessional {
+    return _accountType == 'coach' ||
+        _accountType == 'nutritionist';
+  }
+
+  /*
+   * O roteador atual reconhece profissionais como coach.
+   *
+   * O tipo específico fica em coaches.professional_type.
+   */
+  String get _databaseUserRole {
+    switch (_accountType) {
+      case 'coach':
+      case 'nutritionist':
+        return 'coach';
+
+      case 'athlete':
+      default:
+        return 'athlete';
+    }
+  }
+
+  String? get _databaseProfessionalType {
+    switch (_accountType) {
+      case 'coach':
+        return 'coach';
+
+      case 'nutritionist':
+        return 'nutritionist';
+
+      case 'athlete':
+      default:
+        return null;
+    }
+  }
+
+  String get _registrationLabel {
+    return _accountType == 'nutritionist' ? 'CRN' : 'CREF';
+  }
+
+  String get _professionalLabel {
+    return _accountType == 'nutritionist'
+        ? 'nutricionista'
+        : 'treinador';
+  }
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    _emailController.dispose();
+    _passwordController.dispose();
+    _crefController.dispose();
+
+    super.dispose();
+  }
+
   Future<void> _submit() async {
+    if (_loading) return;
+
+    FocusScope.of(context).unfocus();
+
     setState(() {
       _loading = true;
       _message = null;
     });
 
     try {
-      if (_mode == 'register') {
-        if (_role == 'coach' && _crefController.text.trim().isEmpty) {
+      if (_isRegister) {
+        if (_nameController.text.trim().isEmpty) {
           setState(() {
-            _message = 'CREF/CRN é obrigatório para cadastro de treinador.';
-            _loading = false;
+            _message = 'Informe o nome completo.';
+          });
+          return;
+        }
+
+        if (_emailController.text.trim().isEmpty) {
+          setState(() {
+            _message = 'Informe o e-mail.';
+          });
+          return;
+        }
+
+        if (_passwordController.text.trim().length < 6) {
+          setState(() {
+            _message =
+                'A senha deve ter pelo menos 6 caracteres.';
+          });
+          return;
+        }
+
+        if (_isProfessional &&
+            _crefController.text.trim().isEmpty) {
+          setState(() {
+            _message =
+                '$_registrationLabel é obrigatório para '
+                'cadastro de $_professionalLabel.';
           });
           return;
         }
@@ -42,27 +147,49 @@ class _AuthGateState extends State<AuthGate> {
           email: _emailController.text.trim(),
           password: _passwordController.text.trim(),
           fullName: _nameController.text.trim(),
-          userRole: _role,
-          crefNumber: _role == 'coach' ? _crefController.text.trim() : null,
+
+          /*
+           * Nutricionista continua sendo profissional
+           * no roteamento principal.
+           */
+          userRole: _databaseUserRole,
+
+          /*
+           * Diferencia treinador e nutricionista
+           * dentro da tabela coaches.
+           */
+          professionalType: _databaseProfessionalType,
+
+          /*
+           * A coluna atual do banco é cref_number,
+           * mas também armazena o CRN do nutricionista.
+           */
+          crefNumber: _isProfessional
+              ? _crefController.text.trim()
+              : null,
         );
 
-        setState(() {
-          _message = response.session == null
-              ? 'Conta criada. Confirme seu e-mail e depois faça login.'
-              : 'Cadastro realizado com sucesso.';
-        });
+        if (!mounted) return;
+
+        if (response.session == null) {
+          setState(() {
+            _message =
+                'Conta criada. Confirme seu e-mail e depois '
+                'faça login.';
+            _mode = 'login';
+          });
+        } else {
+          Navigator.of(context).pushReplacement(
+            MaterialPageRoute(
+              builder: (_) => const HomeRouterScreen(),
+            ),
+          );
+        }
       } else {
         await _authService.signIn(
           email: _emailController.text.trim(),
           password: _passwordController.text.trim(),
         );
-
-        final profile = await _authService.getMyProfile();
-
-        setState(() {
-          _message =
-              'Login realizado com sucesso. Perfil: ${profile?['user_role'] ?? 'sem perfil'}';
-        });
 
         if (!mounted) return;
 
@@ -72,147 +199,254 @@ class _AuthGateState extends State<AuthGate> {
           ),
         );
       }
-    } catch (e) {
+    } catch (error) {
+      if (!mounted) return;
+
       setState(() {
-        _message = 'Erro: $e';
+        _message = 'Erro: $error';
       });
     } finally {
-      setState(() {
-        _loading = false;
-      });
+      if (mounted) {
+        setState(() {
+          _loading = false;
+        });
+      }
     }
   }
 
-  @override
-  void dispose() {
-    _emailController.dispose();
-    _passwordController.dispose();
-    _nameController.dispose();
-    _crefController.dispose();
-    super.dispose();
+  void _changeMode() {
+    setState(() {
+      _mode = _isRegister ? 'login' : 'register';
+      _message = null;
+    });
   }
 
   @override
   Widget build(BuildContext context) {
-    final isRegister = _mode == 'register';
-
     return Scaffold(
       appBar: AppBar(
         title: const Text('Trinium Sports'),
       ),
-      body: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 420),
-          child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Text(
-                  isRegister ? 'Criar conta' : 'Entrar',
-                  style: Theme.of(context).textTheme.headlineMedium,
-                ),
-                const SizedBox(height: 24),
-                if (isRegister)
-                  TextField(
-                    controller: _nameController,
-                    decoration: const InputDecoration(
-                      labelText: 'Nome completo',
-                      border: OutlineInputBorder(),
+      body: SafeArea(
+        child: Center(
+          child: SingleChildScrollView(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(
+                maxWidth: 420,
+              ),
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  mainAxisAlignment:
+                      MainAxisAlignment.center,
+                  crossAxisAlignment:
+                      CrossAxisAlignment.stretch,
+                  children: [
+                    Text(
+                      _isRegister
+                          ? 'Criar conta'
+                          : 'Entrar',
+                      textAlign: TextAlign.center,
+                      style: Theme.of(context)
+                          .textTheme
+                          .headlineMedium,
                     ),
-                  ),
-                if (isRegister && _role == 'coach')
-                  Column(
-                    children: [
+                    const SizedBox(height: 24),
+
+                    if (_isRegister) ...[
                       TextField(
-                        controller: _crefController,
-                        decoration: const InputDecoration(
-                          labelText: 'CREF/CRN (obrigatório)',
+                        controller: _nameController,
+                        textInputAction:
+                            TextInputAction.next,
+                        decoration:
+                            const InputDecoration(
+                          labelText: 'Nome completo',
                           border: OutlineInputBorder(),
                         ),
                       ),
                       const SizedBox(height: 16),
                     ],
-                  ),
-                if (isRegister) const SizedBox(height: 16),
-                TextField(
-                  controller: _emailController,
-                  decoration: const InputDecoration(
-                    labelText: 'E-mail',
-                    border: OutlineInputBorder(),
-                  ),
-                ),
-                const SizedBox(height: 16),
-                TextField(
-                  controller: _passwordController,
-                  obscureText: true,
-                  decoration: const InputDecoration(
-                    labelText: 'Senha',
-                    border: OutlineInputBorder(),
-                  ),
-                ),
-                const SizedBox(height: 16),
-                if (isRegister)
-                  DropdownButtonFormField<String>(
-                    initialValue: _role,
-                    decoration: const InputDecoration(
-                      labelText: 'Tipo de usuário',
-                      border: OutlineInputBorder(),
-                    ),
-                    items: const [
-                      DropdownMenuItem(
-                        value: 'athlete',
-                        child: Text('Atleta'),
+
+                    TextField(
+                      controller: _emailController,
+                      keyboardType:
+                          TextInputType.emailAddress,
+                      textInputAction:
+                          TextInputAction.next,
+                      autofillHints: const [
+                        AutofillHints.email,
+                      ],
+                      decoration:
+                          const InputDecoration(
+                        labelText: 'E-mail',
+                        border: OutlineInputBorder(),
                       ),
-                      DropdownMenuItem(
-                        value: 'coach',
-                        child: Text('Treinador'),
+                    ),
+                    const SizedBox(height: 16),
+
+                    TextField(
+                      controller: _passwordController,
+                      obscureText: _obscurePassword,
+                      textInputAction:
+                          TextInputAction.done,
+                      autofillHints: _isRegister
+                          ? const [
+                              AutofillHints.newPassword,
+                            ]
+                          : const [
+                              AutofillHints.password,
+                            ],
+                      onSubmitted: (_) => _submit(),
+                      decoration: InputDecoration(
+                        labelText: 'Senha',
+                        border:
+                            const OutlineInputBorder(),
+                        suffixIcon: IconButton(
+                          tooltip: _obscurePassword
+                              ? 'Mostrar senha'
+                              : 'Ocultar senha',
+                          onPressed: () {
+                            setState(() {
+                              _obscurePassword =
+                                  !_obscurePassword;
+                            });
+                          },
+                          icon: Icon(
+                            _obscurePassword
+                                ? Icons.visibility
+                                : Icons.visibility_off,
+                          ),
+                        ),
+                      ),
+                    ),
+
+                    if (_isRegister) ...[
+                      const SizedBox(height: 16),
+
+                      DropdownButtonFormField<String>(
+                        initialValue: _accountType,
+                        decoration:
+                            const InputDecoration(
+                          labelText: 'Tipo de usuário',
+                          border: OutlineInputBorder(),
+                        ),
+                        items: const [
+                          DropdownMenuItem<String>(
+                            value: 'athlete',
+                            child: Text('Atleta'),
+                          ),
+                          DropdownMenuItem<String>(
+                            value: 'coach',
+                            child: Text('Treinador'),
+                          ),
+                          DropdownMenuItem<String>(
+                            value: 'nutritionist',
+                            child: Text(
+                              'Nutricionista',
+                            ),
+                          ),
+                        ],
+                        onChanged: _loading
+                            ? null
+                            : (value) {
+                                if (value == null) {
+                                  return;
+                                }
+
+                                setState(() {
+                                  _accountType = value;
+                                  _message = null;
+
+                                  if (!_isProfessional) {
+                                    _crefController
+                                        .clear();
+                                  }
+                                });
+                              },
+                      ),
+
+                      if (_isProfessional) ...[
+                        const SizedBox(height: 16),
+                        TextField(
+                          controller:
+                              _crefController,
+                          textCapitalization:
+                              TextCapitalization
+                                  .characters,
+                          decoration: InputDecoration(
+                            labelText:
+                                'Número do $_registrationLabel',
+                            hintText:
+                                'Informe o registro profissional',
+                            border:
+                                const OutlineInputBorder(),
+                          ),
+                        ),
+                      ],
+                    ],
+
+                    const SizedBox(height: 20),
+
+                    SizedBox(
+                      width: double.infinity,
+                      child: FilledButton(
+                        onPressed:
+                            _loading ? null : _submit,
+                        child: Padding(
+                          padding:
+                              const EdgeInsets.symmetric(
+                            vertical: 12,
+                          ),
+                          child: _loading
+                              ? const SizedBox(
+                                  width: 20,
+                                  height: 20,
+                                  child:
+                                      CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                              : Text(
+                                  _isRegister
+                                      ? 'Criar conta'
+                                      : 'Entrar',
+                                ),
+                        ),
+                      ),
+                    ),
+
+                    const SizedBox(height: 12),
+
+                    TextButton(
+                      onPressed:
+                          _loading ? null : _changeMode,
+                      child: Text(
+                        _isRegister
+                            ? 'Já tenho conta'
+                            : 'Criar uma conta',
+                      ),
+                    ),
+
+                    if (_message != null) ...[
+                      const SizedBox(height: 16),
+                      Container(
+                        padding:
+                            const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          borderRadius:
+                              BorderRadius.circular(12),
+                          color:
+                              const Color(0xFFF1F2F6),
+                        ),
+                        child: Text(
+                          _message!,
+                          textAlign: TextAlign.center,
+                        ),
                       ),
                     ],
-                    onChanged: (value) {
-                      if (value != null) {
-                        setState(() {
-                          _role = value;
-                        });
-                      }
-                    },
-                  ),
-                if (isRegister) const SizedBox(height: 16),
-                SizedBox(
-                  width: double.infinity,
-                  child: FilledButton(
-                    onPressed: _loading ? null : _submit,
-                    child: Text(
-                      _loading
-                          ? 'Processando...'
-                          : isRegister
-                              ? 'Cadastrar'
-                              : 'Entrar',
-                    ),
-                  ),
+                  ],
                 ),
-                const SizedBox(height: 12),
-                TextButton(
-                  onPressed: _loading
-                      ? null
-                      : () {
-                          setState(() {
-                            _mode = isRegister ? 'login' : 'register';
-                            _message = null;
-                          });
-                        },
-                  child: Text(
-                    isRegister ? 'Já tenho conta' : 'Criar uma conta',
-                  ),
-                ),
-                if (_message != null) ...[
-                  const SizedBox(height: 16),
-                  Text(
-                    _message!,
-                    textAlign: TextAlign.center,
-                  ),
-                ],
-              ],
+              ),
             ),
           ),
         ),

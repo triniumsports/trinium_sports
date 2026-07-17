@@ -10,17 +10,44 @@ class AuthService {
     required String password,
     required String fullName,
     required String userRole,
+    String? professionalType,
     String? crefNumber,
   }) async {
-    return await _client.auth.signUp(
-      email: email,
+    final normalizedRole = userRole.trim().toLowerCase();
+
+    final normalizedProfessionalType =
+        professionalType?.trim().toLowerCase();
+
+    final normalizedRegistration = crefNumber?.trim();
+
+    final response = await _client.auth.signUp(
+      email: email.trim(),
       password: password,
       data: {
-        'full_name': fullName,
-        'user_role': userRole,
-        if (crefNumber != null) ...{'cref_number': crefNumber},
+        'full_name': fullName.trim(),
+        'user_role': normalizedRole,
+        if (normalizedProfessionalType != null &&
+            normalizedProfessionalType.isNotEmpty)
+          'professional_type': normalizedProfessionalType,
+        if (normalizedRegistration != null &&
+            normalizedRegistration.isNotEmpty)
+          'cref_number': normalizedRegistration,
       },
     );
+
+    /*
+     * Quando a confirmação de e-mail estiver desabilitada,
+     * o Supabase pode criar a sessão imediatamente.
+     *
+     * Nesse cenário, sincronizamos o perfil agora.
+     * Quando houver confirmação de e-mail, a sincronização
+     * acontecerá no primeiro login.
+     */
+    if (response.session != null) {
+      await ensureProfileSafe();
+    }
+
+    return response;
   }
 
   Future<AuthResponse> signIn({
@@ -28,11 +55,12 @@ class AuthService {
     required String password,
   }) async {
     final response = await _client.auth.signInWithPassword(
-      email: email,
+      email: email.trim(),
       password: password,
     );
 
     await ensureProfileSafe();
+
     return response;
   }
 
@@ -40,22 +68,49 @@ class AuthService {
     await _client.auth.signOut();
   }
 
-  /// Regras:
-  /// - NÃO sobrescreve user_role se já estiver definido (protege admin).
-  /// - Se profile existir: atualiza apenas email/full_name.
-  /// - Se profile não existir: cria com role do metadata (fallback athlete).
-  /// - Se profile existir MAS role vier vazio/null: auto-corrige usando role do metadata (ou athlete).
+  /*
+   * Regras:
+   *
+   * - Não sobrescreve um user_role já definido.
+   * - Protege perfis administrativos.
+   * - Cria o profile quando ele ainda não existe.
+   * - Corrige user_role vazio usando os metadados.
+   * - Cria a linha de athletes para atletas.
+   * - Sincroniza professional_type e registro para profissionais.
+   */
   Future<void> ensureProfileSafe() async {
     final user = currentUser;
-    if (user == null) throw Exception('Usuário não autenticado.');
 
-    final meta = user.userMetadata ?? {};
-    final fullName = (meta['full_name'] ?? '').toString();
-    final roleFromMeta = (meta['user_role'] ?? '').toString().trim().toLowerCase();
+    if (user == null) {
+      throw Exception('Usuário não autenticado.');
+    }
+
+    final metadata = user.userMetadata ?? <String, dynamic>{};
+
+    final fullName =
+        (metadata['full_name'] ?? '').toString().trim();
+
+    final roleFromMetadata =
+        (metadata['user_role'] ?? '')
+            .toString()
+            .trim()
+            .toLowerCase();
+
+    final professionalTypeFromMetadata =
+        (metadata['professional_type'] ?? '')
+            .toString()
+            .trim()
+            .toLowerCase();
+
+    final registrationFromMetadata =
+        (metadata['cref_number'] ?? '').toString().trim();
+
     final email = user.email ?? '';
 
-    // tenta atualizar somente campos seguros (se existir)
-    final updated = await _client
+    /*
+     * Atualiza somente campos seguros caso o perfil já exista.
+     */
+    final updatedProfile = await _client
         .from('profiles')
         .update({
           'email': email,
@@ -65,9 +120,13 @@ class AuthService {
         .select('id')
         .maybeSingle();
 
-    // se não existe profile, cria
-    if (updated == null) {
-      final roleToInsert = roleFromMeta.isEmpty ? 'athlete' : roleFromMeta;
+    /*
+     * Se o perfil não existir, cria usando o role dos metadados.
+     */
+    if (updatedProfile == null) {
+      final roleToInsert = roleFromMetadata.isEmpty
+          ? 'athlete'
+          : roleFromMetadata;
 
       await _client.from('profiles').insert({
         'id': user.id,
@@ -77,33 +136,77 @@ class AuthService {
       });
     }
 
-    // carrega profile e corrige role vazio/null se necessário
+    /*
+     * Corrige somente quando user_role estiver vazio.
+     * Não altera admin ou outros perfis já definidos.
+     */
     final profile = await getMyProfile();
-    final roleNow = (profile?['user_role'] ?? '').toString().trim().toLowerCase();
 
-    if (roleNow.isEmpty) {
-      // auto-correção: usa metadata ou athlete
-      final fixed = roleFromMeta.isEmpty ? 'athlete' : roleFromMeta;
+    final currentRole =
+        (profile?['user_role'] ?? '')
+            .toString()
+            .trim()
+            .toLowerCase();
 
-      // IMPORTANTE: só corrige se estava vazio; não mexe se já tinha algo (ex.: admin)
-      await _client.from('profiles').update({
-        'user_role': fixed,
-      }).eq('id', user.id);
+    if (currentRole.isEmpty) {
+      final correctedRole = roleFromMetadata.isEmpty
+          ? 'athlete'
+          : roleFromMetadata;
+
+      await _client
+          .from('profiles')
+          .update({'user_role': correctedRole})
+          .eq('id', user.id);
     }
 
-    // cria athlete row se perfil final for atleta
     final finalProfile = await getMyProfile();
-    final finalRole = (finalProfile?['user_role'] ?? '').toString().trim().toLowerCase();
+
+    final finalRole =
+        (finalProfile?['user_role'] ?? '')
+            .toString()
+            .trim()
+            .toLowerCase();
 
     if (finalRole == 'athlete') {
-      await _client.from('athletes').upsert({'id': user.id});
+      await _client.from('athletes').upsert({
+        'id': user.id,
+      });
+
+      return;
     }
 
-    // coaches é criado por trigger; não mexer aqui.
+    /*
+     * A tabela coaches é criada pelo trigger existente.
+     *
+     * Aqui sincronizamos os dados escolhidos no primeiro
+     * cadastro para evitar que nutricionistas sejam tratados
+     * inicialmente como treinadores.
+     */
+    if (finalRole == 'coach') {
+      final professionalPayload = <String, dynamic>{};
+
+      if (professionalTypeFromMetadata.isNotEmpty) {
+        professionalPayload['professional_type'] =
+            professionalTypeFromMetadata;
+      }
+
+      if (registrationFromMetadata.isNotEmpty) {
+        professionalPayload['cref_number'] =
+            registrationFromMetadata;
+      }
+
+      if (professionalPayload.isNotEmpty) {
+        await _client
+            .from('coaches')
+            .update(professionalPayload)
+            .eq('id', user.id);
+      }
+    }
   }
 
   Future<Map<String, dynamic>?> getMyProfile() async {
     final user = currentUser;
+
     if (user == null) return null;
 
     return await _client
