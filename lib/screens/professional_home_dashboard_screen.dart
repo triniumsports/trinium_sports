@@ -5,6 +5,8 @@ import 'coach_athlete_summary_screen.dart';
 import 'coach_athlete_workouts_review_screen.dart';
 import 'coach_create_workout_screen.dart';
 import 'coach_requests_screen.dart';
+import '../widgets/app_logout_button.dart';
+import 'nutrition_prescription_screen.dart';
 
 class ProfessionalHomeDashboardScreen extends StatefulWidget {
   final String fullName;
@@ -593,6 +595,19 @@ class _ProfessionalHomeDashboardScreenState
       appBar: AppBar(
         title: const Text('Home do Profissional'),
         actions: [
+          IconButton(
+            tooltip: 'Prescrição nutricional',
+            onPressed: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => const NutritionPrescriptionScreen(),
+                ),
+              );
+            },
+            icon: const Icon(Icons.restaurant_menu),
+          ),
+          const AppLogoutButton(),
+
           IconButton(
             onPressed: _load,
             icon: const Icon(Icons.refresh),
